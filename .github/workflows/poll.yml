@@ -1,0 +1,93 @@
+# Опрос Pinnacle по расписанию и публикация сайта на GitHub Pages.
+#
+# Cron стартует раз в час; скрипт сам решает, каким лигам пора (раз в 3 ч, за 8 ч до матча — раз в час).
+# Если опрашивать нечего — ничего не коммитится и не публикуется (квота не тратится).
+#
+# Настройка (один раз):
+#   Settings → Secrets and variables → Actions → Secrets:   ODDS_API_KEY
+#   Settings → Secrets and variables → Actions → Variables: TRACK_SPORTS (например soccer_epl,soccer_spain_la_liga)
+#   Settings → Pages → Source: GitHub Actions
+name: Poll Pinnacle
+
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Опросить все лиги прямо сейчас (тратит 1 запрос квоты на лигу)"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: ["static/**", "app/**", ".github/workflows/poll.yml"]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: poll
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.run.outputs.changed }}
+    env:
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      TRACK_SPORTS: ${{ vars.TRACK_SPORTS || 'soccer_epl' }}
+      POLL_BASE_HOURS: ${{ vars.POLL_BASE_HOURS || '3' }}
+      POLL_NEAR_HOURS: ${{ vars.POLL_NEAR_HOURS || '1' }}
+      NEAR_KICKOFF_HOURS: ${{ vars.NEAR_KICKOFF_HOURS || '8' }}
+      MIN_QUOTA_REMAINING: ${{ vars.MIN_QUOTA_REMAINING || '10' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-tracker.txt
+
+      - run: pip install -r requirements-tracker.txt
+
+      - name: Poll (or just rebuild the site on push)
+        id: run
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            python -m app.cli build
+          elif [ "${{ inputs.force }}" = "true" ]; then
+            python -m app.cli run --force
+          else
+            python -m app.cli run
+          fi
+
+      - name: Commit state
+        if: steps.run.outputs.changed == 'true' && github.event_name != 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/state.json
+          git diff --cached --quiet && exit 0
+          git commit -m "poll $(date -u +%Y-%m-%dT%H:%MZ)"
+          git pull --rebase --autostash
+          git push
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.run.outputs.changed == 'true'
+        with:
+          path: _site
+
+  deploy:
+    needs: poll
+    if: needs.poll.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

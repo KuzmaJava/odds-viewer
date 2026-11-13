@@ -76,8 +76,10 @@ class Poller:
             return now
         return parse_iso(last) + self.interval_for(sport, now)
 
-    def due_sports(self, now: datetime) -> List[str]:
-        return [s for s in self.sports if self.next_poll_for(s, now) <= now]
+    def due_sports(self, now: datetime, slack: timedelta = timedelta(0)) -> List[str]:
+        """Лиги, которые пора опрашивать. slack — допуск для запуска по cron (раз в час),
+        чтобы опрос не съезжал на следующий запуск из-за задержки в несколько минут."""
+        return [s for s in self.sports if self.next_poll_for(s, now) <= now + slack]
 
     def schedule(self, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
         now = now or utc_now()
@@ -134,8 +136,11 @@ class Poller:
                 polled.append(sport)
             if polled:
                 self.store.set_setting("last_poll_at", ts)
+            if self.client.quota.get("remaining") is not None:
+                self.store.set_setting("quota", self.client.quota)
             self.last_error = "; ".join(errors) or None
             self.last_result = {"at": ts, "sports": polled, "snapshots_saved": saved, "errors": errors}
+            self.store.set_setting("last_result", self.last_result)
             log.info("poll done: %s", self.last_result)
             return self.last_result
 

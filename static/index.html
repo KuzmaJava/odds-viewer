@@ -113,6 +113,7 @@
       <button id="saveLeagues">Сохранить</button>
       <span class="muted" id="estimate"></span>
     </div>
+    <p class="muted" id="staticHint"></p>
     <div class="leagues" id="leagueList">Загрузка…</div>
   </section>
 </main>
@@ -132,7 +133,47 @@ const fmtDT = (iso) => {
 };
 const fmtT = (iso) => (iso ? new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "—");
 
+// ---------- источник данных ----------
+// Статический режим (GitHub Pages): рядом со страницей лежит data.json, собранный GitHub Actions.
+// Серверный режим (локально, uvicorn): данные отдаёт FastAPI по /api/...
+let STATIC = null;
+
+async function loadStaticData() {
+  try {
+    const r = await fetch("data.json", { cache: "no-cache" });
+    if (r.ok) STATIC = await r.json();
+  } catch (_) { /* не статический режим */ }
+}
+
+function staticDrops(events, minPct) {
+  const res = [];
+  for (const ev of events) for (const o of ev.outcomes) {
+    if (o.change_pct != null && o.change_pct <= -Math.abs(minPct)) {
+      res.push({ event_id: ev.id, sport_title: ev.sport_title, home: ev.home, away: ev.away,
+        commence_time: ev.commence_time, snapshots: ev.snapshots, first_ts: ev.first_ts, last_ts: ev.last_ts, ...o });
+    }
+  }
+  return res.sort((a, b) => a.change_pct - b.change_pct);
+}
+
+function staticApi(path, opts) {
+  if (opts && opts.method && opts.method !== "GET") throw new Error("Недоступно в статической версии");
+  const url = new URL(path, location.href);
+  const p = url.pathname.replace(/^.*\/api\//, "/api/");
+  const started = url.searchParams.get("include_started") === "true";
+  const now = new Date().toISOString();
+  const events = STATIC.events.filter((e) => started || e.commence_time > now);
+  if (p === "/api/status") return STATIC.status;
+  if (p === "/api/events") return events;
+  if (p === "/api/drops") return staticDrops(events, parseFloat(url.searchParams.get("min_pct")) || 0);
+  if (p === "/api/sports") return STATIC.sports || [];
+  const m = p.match(/^\/api\/events\/(.+)\/history$/);
+  if (m) return { history: STATIC.history[decodeURIComponent(m[1])] || [] };
+  throw new Error("Неизвестный путь " + p);
+}
+
 async function api(path, opts) {
+  if (STATIC) return staticApi(path, opts);
   const r = await fetch(path, opts);
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`);
@@ -151,8 +192,9 @@ async function loadStatus() {
     `Лиг: ${st.tracked_sports.length} · раз в ${p.base_hours} ч, за ${p.near_window_hours} ч до матча — раз в ${p.near_hours} ч` +
     (near ? ` (сейчас часто: ${near})` : "") +
     ` · последний опрос ${fmtDT(st.last_poll_at)} · следующий ${fmtDT(st.next_poll_at)}${q}`;
+  if (STATIC) $("meta").textContent += ` · данные собраны ${fmtDT(STATIC.generated_at)}`;
   const msgs = [];
-  if (st.demo) msgs.push("Демо-режим: ключ ODDS_API_KEY не задан — коэффициенты не меняются.");
+  if (st.demo && !STATIC) msgs.push("Демо-режим: ключ ODDS_API_KEY не задан — коэффициенты не меняются.");
   if (st.last_error) msgs.push("Ошибка последнего опроса: " + esc(st.last_error));
   banner(msgs.join("<br>"));
 }
@@ -247,6 +289,16 @@ async function loadLeagues() {
 $("leagueList").addEventListener("change", updateEstimate);
 $("saveLeagues").addEventListener("click", async () => {
   const sports = [...document.querySelectorAll("#leagueList input:checked")].map((i) => i.value);
+  if (STATIC) {
+    // На GitHub Pages сохранять некуда: список лиг — переменная репозитория TRACK_SPORTS
+    const value = sports.join(",");
+    try { await navigator.clipboard.writeText(value); } catch (_) {}
+    const link = STATIC.repo ? `https://github.com/${STATIC.repo}/settings/variables/actions` : null;
+    $("staticHint").innerHTML = `Скопировано: <code>${esc(value)}</code>. Вставьте это значение в переменную <b>TRACK_SPORTS</b>` +
+      (link ? ` (<a href="${link}" target="_blank" rel="noopener">настройки репозитория → Variables</a>)` : "") +
+      ". Изменения вступят в силу со следующего запуска.";
+    return;
+  }
   await api("/api/tracked", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sports }) });
   await loadStatus();
   $("saveLeagues").textContent = "Сохранено ✓";
@@ -256,6 +308,7 @@ $("saveLeagues").addEventListener("click", async () => {
 // ---------- общее ----------
 async function refresh() {
   try {
+    if (STATIC) await loadStaticData();
     await loadStatus();
     if (state.tab === "moves") await loadMoves();
     if (state.tab === "drops") await loadDrops();
@@ -276,6 +329,7 @@ $("moveRows").addEventListener("click", (e) => { const tr = e.target.closest("tr
 $("startedMoves").addEventListener("change", loadMoves);
 ["minPct", "startedDrops", "onlyMain"].forEach((id) => $(id).addEventListener("change", loadDrops));
 $("pollNow").addEventListener("click", async () => {
+  if (STATIC) return; // в статическом режиме кнопка открывает GitHub (см. ниже)
   const btn = $("pollNow");
   btn.disabled = true; btn.textContent = "Опрашиваю…";
   try { await api("/api/poll", { method: "POST" }); state.history = {}; await refresh(); }
@@ -284,6 +338,16 @@ $("pollNow").addEventListener("click", async () => {
 });
 
 (async () => {
+  await loadStaticData();
+  if (STATIC) {
+    // Опрос делает GitHub Actions — кнопка ведёт на ручной запуск workflow
+    const btn = $("pollNow");
+    if (STATIC.repo) {
+      btn.textContent = "Запустить опрос в GitHub";
+      btn.onclick = () => window.open(`https://github.com/${STATIC.repo}/actions/workflows/poll.yml`, "_blank", "noopener");
+    } else btn.hidden = true;
+    $("saveLeagues").textContent = "Скопировать список для TRACK_SPORTS";
+  }
   await loadStatus().catch((e) => banner("Ошибка: " + esc(e.message)));
   let saved = null;
   try { saved = localStorage.getItem("tab"); } catch (_) {}

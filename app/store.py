@@ -105,6 +105,31 @@ class Store:
             ).fetchone()
         return row["t"] if row else None
 
+    # --- JSON-состояние (для GitHub Actions: база живёт в репозитории как текстовый файл) ---
+    def dump(self, drop_commenced_before: Optional[str] = None) -> Dict[str, Any]:
+        """Всё содержимое базы. Матчи, начавшиеся раньше drop_commenced_before, отбрасываются."""
+        with self._lock:
+            settings = {r["key"]: json.loads(r["value"]) for r in self._conn.execute("SELECT * FROM settings")}
+            events = [dict(r) for r in self._conn.execute("SELECT * FROM events ORDER BY commence_time, id")]
+            snaps: Dict[str, List[list]] = {}
+            for r in self._conn.execute("SELECT * FROM snapshots ORDER BY ts"):
+                snaps.setdefault(r["event_id"], []).append([r["ts"], r["home"], r["draw"], r["away"]])
+        if drop_commenced_before:
+            events = [e for e in events if e["commence_time"] >= drop_commenced_before]
+        return {
+            "version": 1,
+            "settings": settings,
+            "events": [{**e, "snapshots": snaps.get(e["id"], [])} for e in events],
+        }
+
+    def load(self, data: Dict[str, Any]) -> None:
+        for key, value in data.get("settings", {}).items():
+            self.set_setting(key, value)
+        for ev in data.get("events", []):
+            meta = {k: ev[k] for k in ("id", "sport_key", "sport_title", "home", "away", "commence_time")}
+            for ts, home, draw, away in ev.get("snapshots", []):
+                self.save_snapshot(meta, ts, home, draw, away)
+
     def event(self, event_id: str) -> Optional[Dict[str, Any]]:
         with self._lock:
             row = self._conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()

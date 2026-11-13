@@ -12,7 +12,27 @@
 Фиксируется только прематч: после начала матча снимки не пишутся.
 «Открытие» — это первый снимок, сделанный трекером, а не реальное открытие линии у Pinnacle.
 
-## Запуск
+## Работа на GitHub (без своего сервера)
+
+Опрос делает GitHub Actions (`.github/workflows/poll.yml`), сайт публикуется на GitHub Pages.
+
+- Cron стартует раз в час, `python -m app.cli run` сам решает, каким лигам пора по расписанию.
+  Если опрашивать некого — ничего не происходит, квота не тратится.
+- Состояние (все снимки) хранится в `data/state.json` и коммитится ботом после каждого опроса.
+  Матчи, начавшиеся больше 14 дней назад, удаляются.
+- Сайт — тот же `static/index.html`: если рядом лежит `data.json`, страница работает без бэкенда.
+
+Настройка репозитория (один раз):
+1. **Settings → Secrets and variables → Actions → Secrets**: `ODDS_API_KEY`.
+2. **Settings → Secrets and variables → Actions → Variables**: `TRACK_SPORTS` (через запятую, например `soccer_epl,soccer_spain_la_liga`).
+   Необязательно: `POLL_BASE_HOURS`, `POLL_NEAR_HOURS`, `NEAR_KICKOFF_HOURS`, `MIN_QUOTA_REMAINING`.
+3. **Settings → Pages → Source: GitHub Actions**.
+4. **Actions → Poll Pinnacle → Run workflow** (галочка «force» — опросить сразу).
+
+Ограничения: запуски по cron могут опаздывать на 5–15 минут; на бесплатном плане Pages работает только у публичного репозитория.
+В публичном репозитории GitHub может отключить расписание после 60 дней без активности — придёт письмо, включается одной кнопкой.
+
+## Локальный запуск
 
 ```bash
 python3 -m venv .venv

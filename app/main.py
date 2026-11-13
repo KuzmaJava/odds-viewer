@@ -12,8 +12,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.movement import drops, event_movement
-from app.odds_client import OddsApiError, OddsClient
-from app.poller import Poller, iso, utc_now
+from app.config import build_client, build_poller
+from app.export import status_dict
+from app.odds_client import OddsApiError
+from app.poller import iso, utc_now
 from app.store import Store
 
 load_dotenv()
@@ -22,20 +24,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 
-client = OddsClient(
-    api_key=os.getenv("ODDS_API_KEY", "").strip(),
-    regions=os.getenv("ODDS_REGIONS", "eu"),
-    cache_ttl=int(os.getenv("CACHE_TTL_SECONDS", "120")),
-)
+client = build_client()
 store = Store(os.getenv("DB_PATH", str(ROOT / "data" / "odds.sqlite")))
-poller = Poller(
-    client, store,
-    default_sports=[s.strip() for s in os.getenv("TRACK_SPORTS", "soccer_epl").split(",") if s.strip()],
-    min_quota=int(os.getenv("MIN_QUOTA_REMAINING", "10")),
-    base_hours=float(os.getenv("POLL_BASE_HOURS", "3")),
-    near_hours=float(os.getenv("POLL_NEAR_HOURS", "1")),
-    near_window_hours=float(os.getenv("NEAR_KICKOFF_HOURS", "8")),
-)
+poller = build_poller(client, store)
 
 
 @asynccontextmanager
@@ -56,23 +47,7 @@ def index():
 
 @app.get("/api/status")
 def status():
-    schedule = poller.schedule()
-    hours = lambda td: td.total_seconds() / 3600  # noqa: E731
-    return {
-        "demo": client.demo,
-        "tracked_sports": poller.sports,
-        "policy": {
-            "base_hours": hours(poller.base),
-            "near_hours": hours(poller.near),
-            "near_window_hours": hours(poller.near_window),
-        },
-        "schedule": schedule,
-        "last_poll_at": poller.last_poll_at,
-        "next_poll_at": min((s["next_poll_at"] for s in schedule), default=None),
-        "last_result": poller.last_result,
-        "last_error": poller.last_error,
-        "quota": client.quota,
-    }
+    return status_dict(poller, client.demo)
 
 
 @app.get("/api/sports")
