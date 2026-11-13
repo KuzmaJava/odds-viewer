@@ -1,0 +1,101 @@
+from datetime import timedelta
+
+from app.movement import change_pct, drops, event_movement
+from app.poller import Poller, iso, utc_now
+from app.store import Store
+
+
+def _raw_event(eid, commence, home_price, draw_price, away_price):
+    return {
+        "id": eid, "sport_key": "soccer_epl", "sport_title": "EPL", "commence_time": commence,
+        "home_team": "Arsenal", "away_team": "Chelsea",
+        "bookmakers": [{"key": "pinnacle", "title": "Pinnacle", "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Arsenal", "price": home_price}, {"name": "Chelsea", "price": away_price},
+            {"name": "Draw", "price": draw_price},
+        ]}]}],
+    }
+
+
+class FakeClient:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.quota = {"remaining": "400"}
+        self.calls = []
+
+    def odds(self, sport, markets, bookmakers, use_cache):
+        self.calls.append((sport, markets, bookmakers, use_cache))
+        return self.responses.pop(0)
+
+
+def _poller(client, store):
+    return Poller(client, store, interval_minutes=30, min_quota=10, default_sports=["soccer_epl"])
+
+
+def test_change_pct():
+    assert change_pct(2.0, 1.8) == -10.0
+    assert change_pct(2.0, 2.2) == 10.0
+    assert change_pct(None, 2.0) is None
+
+
+def test_poll_saves_only_upcoming_pinnacle_h2h():
+    future = iso(utc_now() + timedelta(days=1))
+    past = iso(utc_now() - timedelta(hours=1))
+    client = FakeClient([[_raw_event("a", future, 2.0, 3.4, 3.8), _raw_event("live", past, 1.5, 4.0, 6.0)]])
+    store = Store(":memory:")
+
+    result = _poller(client, store).poll_once()
+
+    assert result["snapshots_saved"] == 1
+    assert client.calls == [("soccer_epl", "h2h", "pinnacle", False)]
+    assert store.history("a")[0]["home"] == 2.0
+    assert store.history("live") == []
+    assert store.get_setting("last_poll_at") == result["at"]
+
+
+def test_movement_from_opening_to_current_and_drops_list():
+    store = Store(":memory:")
+    future = iso(utc_now() + timedelta(days=1))
+    ev = {"id": "a", "sport_key": "soccer_epl", "sport_title": "EPL",
+          "home": "Arsenal", "away": "Chelsea", "commence_time": future}
+    store.save_snapshot(ev, "2026-11-13T10:00:00Z", 2.0, 3.5, 4.0)
+    store.save_snapshot(ev, "2026-11-13T10:30:00Z", 1.9, 3.5, 4.4)
+    store.save_snapshot(ev, "2026-11-13T11:00:00Z", 1.8, 3.6, 4.6)
+
+    rows = store.events_with_range(iso(utc_now()))
+    mv = event_movement(rows[0])
+    by = {o["code"]: o for o in mv["outcomes"]}
+    assert mv["snapshots"] == 3
+    assert by["home"]["opening"] == 2.0 and by["home"]["current"] == 1.8
+    assert by["home"]["change_pct"] == -10.0
+    assert by["away"]["change_pct"] == 15.0
+    assert by["1X"]["derived"] is True
+
+    found = drops([mv], min_drop_pct=3)
+    assert [d["code"] for d in found][0] == "home"  # самая сильная просадка первой
+    assert all(d["change_pct"] <= -3 for d in found)
+    assert "away" not in [d["code"] for d in found]
+
+
+def test_started_events_filtered_out():
+    store = Store(":memory:")
+    past = iso(utc_now() - timedelta(hours=2))
+    ev = {"id": "p", "sport_key": "s", "sport_title": "S", "home": "A", "away": "B", "commence_time": past}
+    store.save_snapshot(ev, "2026-11-13T10:00:00Z", 2.0, 3.0, 4.0)
+    assert store.events_with_range(iso(utc_now())) == []
+    assert len(store.events_with_range(None)) == 1
+
+
+def test_poll_stops_when_quota_low():
+    client = FakeClient([[]])
+    client.quota = {"remaining": "5"}
+    result = _poller(client, Store(":memory:")).poll_once()
+    assert client.calls == []
+    assert "квота" in result["errors"][0]
+
+
+def test_tracked_sports_persisted():
+    store = Store(":memory:")
+    p = _poller(FakeClient([]), store)
+    assert p.sports == ["soccer_epl"]
+    p.sports = ["soccer_spain_la_liga"]
+    assert _poller(FakeClient([]), store).sports == ["soccer_spain_la_liga"]

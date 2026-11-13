@@ -58,14 +58,20 @@ class OddsClient:
             return demo.sports()
         return self._get("/sports", {}, ttl=3600)
 
-    def odds(self, sport: str, markets: str = "h2h,totals") -> List[dict]:
-        """Коэффициенты по всем матчам лиги. Стоимость = кол-во рынков × кол-во регионов."""
+    def odds(self, sport: str, markets: str = "h2h,totals", bookmakers: Optional[str] = None,
+             use_cache: bool = True) -> List[dict]:
+        """Коэффициенты по всем матчам лиги.
+
+        Стоимость = кол-во рынков × кол-во регионов. С `bookmakers` (до 10 контор) — как один регион.
+        """
         if self.demo:
             return demo.odds(sport)
-        return self._get(
-            f"/sports/{sport}/odds",
-            {"regions": self.regions, "markets": markets, "oddsFormat": "decimal", "dateFormat": "iso"},
-        )
+        params: Dict[str, Any] = {"markets": markets, "oddsFormat": "decimal", "dateFormat": "iso"}
+        if bookmakers:
+            params["bookmakers"] = bookmakers
+        else:
+            params["regions"] = self.regions
+        return self._get(f"/sports/{sport}/odds", params, ttl=None if use_cache else 0)
 
     def event_odds(self, sport: str, event_id: str, markets: str) -> dict:
         """Доп. рынки (team_totals, double_chance...) для одного матча."""

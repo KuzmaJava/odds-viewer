@@ -3,279 +3,286 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Odds Viewer</title>
+<title>Pinnacle Tracker</title>
 <style>
   :root {
     --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #6b7385; --line: #e3e6ec;
-    --accent: #2f6fde; --best: #1f9d55; --best-bg: #e6f6ec; --warn-bg: #fff4d6; --row-hover: #f1f4fa;
+    --accent: #2f6fde; --drop: #c4352b; --drop-bg: #fdecea; --rise: #1f8a4c; --rise-bg: #e6f6ec;
+    --warn-bg: #fff4d6; --row-hover: #f1f4fa;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #12151b; --panel: #1a1e26; --text: #e3e7ef; --muted: #8b93a7; --line: #2a303c;
-      --accent: #6c9cf0; --best: #4fd18b; --best-bg: #173226; --warn-bg: #3a3214; --row-hover: #212633;
+      --accent: #6c9cf0; --drop: #ff7b70; --drop-bg: #3a1d1b; --rise: #4fd18b; --rise-bg: #173226;
+      --warn-bg: #3a3214; --row-hover: #212633;
     }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
-  h1 { font-size: 17px; margin: 0 12px 0 0; }
-  label { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; }
-  select, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
-  button { cursor: pointer; }
-  button:hover { border-color: var(--accent); }
+  header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+  h1 { font-size: 17px; margin: 0; }
+  nav { display: flex; gap: 4px; }
+  nav button { border: none; background: none; padding: 6px 12px; border-radius: 6px; color: var(--muted); font-weight: 600; }
+  nav button.active { background: var(--bg); color: var(--text); }
   .spacer { flex: 1; }
   .meta { color: var(--muted); font-size: 12px; }
+  select, button, input[type=number] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  label { color: var(--muted); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
   .banner { margin: 12px 20px 0; padding: 8px 12px; border-radius: 6px; background: var(--warn-bg); font-size: 13px; }
-  .error { background: #fde2e2; color: #8a1c1c; }
-  main { padding: 12px 20px 40px; overflow-x: auto; }
-  table { border-collapse: collapse; width: 100%; min-width: 900px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }
-  th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--panel); }
-  thead tr:first-child th { border-bottom: none; padding-bottom: 0; color: var(--text); }
-  td.match { text-align: left; }
-  td.match .teams { font-weight: 600; }
-  td.time { color: var(--muted); font-size: 12px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 10px; }
+  main { padding: 14px 20px 40px; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; background: var(--panel); border: 1px solid var(--line); }
+  th, td { padding: 7px 9px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .left { text-align: left; }
+  .muted { color: var(--muted); font-size: 12px; }
   .grp { border-left: 1px solid var(--line); }
-  td.odd { font-variant-numeric: tabular-nums; min-width: 52px; }
-  td.odd.best { color: var(--best); background: var(--best-bg); font-weight: 600; }
-  td.line { color: var(--muted); font-variant-numeric: tabular-nums; }
-  td.na { color: var(--muted); }
-  .derived { color: var(--muted); font-style: italic; }
+  .num { font-variant-numeric: tabular-nums; }
+  td.odd .cur { font-weight: 600; }
+  td.odd .delta { font-size: 11px; }
+  .down { color: var(--drop); }
+  .up { color: var(--rise); }
+  td.odd.down-bg { background: var(--drop-bg); }
+  td.odd.up-bg { background: var(--rise-bg); }
+  .derived { font-style: italic; }
+  tbody tr.ev { cursor: pointer; }
   tbody tr.ev:hover { background: var(--row-hover); }
-  tr.details td { background: var(--bg); text-align: left; padding: 10px 14px; }
-  .details-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
-  .details-grid h4 { margin: 0 0 6px; font-size: 13px; }
-  .mini { border-collapse: collapse; width: 100%; min-width: 0; border: 1px solid var(--line); }
-  .mini th, .mini td { padding: 4px 6px; font-size: 12px; }
-  .link { color: var(--accent); background: none; border: none; padding: 0; font-size: 12px; }
-  .legend { margin: 10px 20px 0; color: var(--muted); font-size: 12px; }
-  .legend span { padding: 1px 6px; border-radius: 4px; }
+  tr.details > td { background: var(--bg); text-align: left; padding: 10px 14px; }
+  .hist { width: auto; min-width: 520px; }
+  .hist td, .hist th { padding: 4px 10px; font-size: 12px; }
+  .pct { font-weight: 700; }
+  .empty { padding: 30px; text-align: center; color: var(--muted); }
+  .leagues { columns: 3 260px; background: var(--panel); border: 1px solid var(--line); padding: 12px; border-radius: 8px; }
+  .leagues label { display: flex; color: var(--text); padding: 3px 0; break-inside: avoid; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Коэффициенты</h1>
-  <label>Лига <select id="sport"></select></label>
-  <label>Контора <select id="bookmaker"></select></label>
-  <label><input type="checkbox" id="autorefresh"> автообновление (2 мин)</label>
-  <button id="refresh">Обновить</button>
+  <h1>Pinnacle · движение линии</h1>
+  <nav>
+    <button data-tab="moves" class="active">Матчи</button>
+    <button data-tab="drops">Просадки</button>
+    <button data-tab="leagues">Лиги</button>
+  </nav>
   <div class="spacer"></div>
   <div class="meta" id="meta"></div>
+  <button id="pollNow" title="Внеплановый опрос: 1 запрос квоты на каждую лигу">Опросить сейчас</button>
 </header>
 <div id="banner"></div>
-<div class="legend"><span style="background:var(--best-bg);color:var(--best)">зелёным</span> — лучший коэффициент среди всех контор по матчу · <span class="derived">курсив</span> — двойной шанс рассчитан из 1X2 · ИТ — индивидуальные тоталы (отдельный запрос на матч)</div>
+
 <main>
-  <table>
-    <thead>
-      <tr>
-        <th colspan="2"></th>
-        <th colspan="4" class="grp">Исход</th>
-        <th colspan="3" class="grp">Двойной шанс</th>
-        <th colspan="3" class="grp">Тотал</th>
-        <th class="grp"></th>
-      </tr>
-      <tr>
-        <th>Время</th><th style="text-align:left">Матч</th>
-        <th class="grp">П1</th><th>X</th><th>П2</th><th>маржа</th>
+  <!-- Матчи -->
+  <section id="tab-moves">
+    <div class="toolbar">
+      <label><input type="checkbox" id="startedMoves"> показывать начавшиеся</label>
+      <span class="muted">Значение — текущий коэффициент; под ним — от открытия. Двойной шанс (курсив) рассчитан из 1X2. Клик по матчу — история.</span>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr>
+        <th>Начало</th><th class="left">Матч</th><th>Снимков</th>
+        <th class="grp">П1</th><th>X</th><th>П2</th>
         <th class="grp">1X</th><th>12</th><th>X2</th>
-        <th class="grp">линия</th><th>Б</th><th>М</th>
-        <th class="grp">ИТ</th>
-      </tr>
-    </thead>
-    <tbody id="rows"><tr><td colspan="13" class="na">Загрузка…</td></tr></tbody>
-  </table>
+      </tr></thead>
+      <tbody id="moveRows"></tbody>
+    </table></div>
+  </section>
+
+  <!-- Просадки -->
+  <section id="tab-drops" hidden>
+    <div class="toolbar">
+      <label>Просадка от <input type="number" id="minPct" value="3" min="0" step="0.5" style="width:70px"> %</label>
+      <label><input type="checkbox" id="startedDrops"> включая начавшиеся</label>
+      <label><input type="checkbox" id="onlyMain"> только П1 / X / П2</label>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr>
+        <th>Δ</th><th>Исход</th><th class="left">Матч</th><th>Начало</th>
+        <th class="grp">Открытие</th><th>Сейчас</th><th class="grp">Отслеживается</th>
+      </tr></thead>
+      <tbody id="dropRows"></tbody>
+    </table></div>
+  </section>
+
+  <!-- Лиги -->
+  <section id="tab-leagues" hidden>
+    <div class="toolbar">
+      <button id="saveLeagues">Сохранить</button>
+      <span class="muted" id="estimate"></span>
+    </div>
+    <div class="leagues" id="leagueList">Загрузка…</div>
+  </section>
 </main>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { events: [], bookmaker: null, extras: {}, open: new Set(), timer: null };
+const state = { status: null, events: [], open: new Set(), history: {}, tab: "moves" };
 
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmt = (v) => (v == null ? "—" : Number(v).toFixed(2));
-const fmtTime = (iso) => {
+const fmtPct = (v) => (v == null ? "" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(1) + "%");
+const fmtDT = (iso) => {
+  if (!iso) return "—";
   const d = new Date(iso);
   return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) + " " +
          d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 };
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtT = (iso) => (iso ? new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "—");
 
-async function api(path) {
-  const r = await fetch(path);
+async function api(path, opts) {
+  const r = await fetch(path, opts);
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`);
   return body;
 }
 
-function showBanner(text, isError) {
-  $("banner").innerHTML = text ? `<div class="banner ${isError ? "error" : ""}">${text}</div>` : "";
+function banner(html) { $("banner").innerHTML = html ? `<div class="banner">${html}</div>` : ""; }
+
+// ---------- статус ----------
+async function loadStatus() {
+  const st = state.status = await api("/api/status");
+  const q = st.quota && st.quota.remaining != null ? ` · квота: осталось ${st.quota.remaining}` : "";
+  $("meta").textContent =
+    `Лиг: ${st.tracked_sports.length} · каждые ${st.interval_minutes} мин · последний опрос ${fmtDT(st.last_poll_at)} · следующий ${fmtT(st.next_poll_at)}${q}`;
+  const msgs = [];
+  if (st.demo) msgs.push("Демо-режим: ключ ODDS_API_KEY не задан — коэффициенты не меняются.");
+  if (st.last_error) msgs.push("Ошибка последнего опроса: " + esc(st.last_error));
+  banner(msgs.join("<br>"));
 }
 
-function showQuota(q) {
-  if (!q || q.remaining == null) return;
-  $("meta").textContent = `Квота API: осталось ${q.remaining}, использовано ${q.used}`;
+// ---------- матчи ----------
+function oddCell(o, first) {
+  const ch = o.change_pct;
+  const dir = ch == null || ch === 0 ? "" : ch < 0 ? "down" : "up";
+  const bg = ch != null && Math.abs(ch) >= 3 ? ` ${dir}-bg` : "";
+  const delta = ch ? `<div class="delta ${dir}">${fmt(o.opening)} · ${fmtPct(ch)}</div>` : `<div class="delta muted">без изменений</div>`;
+  return `<td class="odd num ${first ? "grp" : ""}${bg} ${o.derived ? "derived" : ""}" title="Открытие ${fmt(o.opening)} → сейчас ${fmt(o.current)}">
+    <div class="cur">${fmt(o.current)}</div>${delta}</td>`;
 }
 
-// Лучший коэффициент среди всех контор для данного селектора
-function bestOf(ev, pick) {
-  let best = null;
-  for (const bm of ev.bookmakers) {
-    const v = pick(bm);
-    if (v != null && (best == null || v > best)) best = v;
-  }
-  return best;
+function historyTable(id) {
+  const h = state.history[id];
+  if (!h) return `<span class="muted">Загрузка…</span>`;
+  if (h.error) return `<span class="muted">Ошибка: ${esc(h.error)}</span>`;
+  return `<table class="hist"><thead><tr><th>Снимок</th><th>П1</th><th>X</th><th>П2</th><th>1X</th><th>12</th><th>X2</th></tr></thead><tbody>
+    ${h.map((r) => {
+      const dc = (a, b) => (a && b ? 1 / (1 / a + 1 / b) : null);
+      return `<tr><td>${fmtDT(r.ts)}</td><td class="num">${fmt(r.home)}</td><td class="num">${fmt(r.draw)}</td><td class="num">${fmt(r.away)}</td>
+        <td class="num derived">${fmt(dc(r.home, r.draw))}</td><td class="num derived">${fmt(dc(r.home, r.away))}</td><td class="num derived">${fmt(dc(r.draw, r.away))}</td></tr>`;
+    }).join("")}</tbody></table>`;
 }
 
-function oddCell(ev, bm, pick, cls = "") {
-  const v = bm ? pick(bm) : null;
-  if (v == null) return `<td class="odd na ${cls}">—</td>`;
-  const best = ev.bookmakers.length > 1 && v === bestOf(ev, pick);
-  return `<td class="odd ${best ? "best" : ""} ${cls}">${fmt(v)}</td>`;
-}
-
-// Тоталы сравниваем только на той же линии, что у выбранной конторы
-const totalPick = (point, side) => (b) => {
-  const l = (b.totals || []).find((x) => x.point === point);
-  return l ? l[side] : null;
-};
-
-function renderRow(ev) {
-  const bm = ev.bookmakers.find((b) => b.key === state.bookmaker);
-  const tm = bm && bm.totals_main;
-  const dcCls = bm && bm.double_chance_derived ? "derived" : "";
-  const opened = state.open.has(ev.id);
-  return `
-    <tr class="ev" data-id="${esc(ev.id)}">
-      <td class="time">${fmtTime(ev.commence_time)}</td>
-      <td class="match"><div class="teams">${esc(ev.home)} — ${esc(ev.away)}</div></td>
-      ${oddCell(ev, bm, (b) => b.h2h.home, "grp")}
-      ${oddCell(ev, bm, (b) => b.h2h.draw)}
-      ${oddCell(ev, bm, (b) => b.h2h.away)}
-      <td class="line">${bm && bm.h2h_margin != null ? bm.h2h_margin.toFixed(1) + "%" : "—"}</td>
-      ${oddCell(ev, bm, (b) => b.double_chance["1X"], "grp " + dcCls)}
-      ${oddCell(ev, bm, (b) => b.double_chance["12"], dcCls)}
-      ${oddCell(ev, bm, (b) => b.double_chance["X2"], dcCls)}
-      <td class="line grp">${tm ? tm.point : "—"}</td>
-      ${tm ? oddCell(ev, bm, totalPick(tm.point, "over")) : '<td class="na">—</td>'}
-      ${tm ? oddCell(ev, bm, totalPick(tm.point, "under")) : '<td class="na">—</td>'}
-      <td class="grp"><button class="link" data-toggle="${esc(ev.id)}">${opened ? "скрыть" : "показать"}</button></td>
-    </tr>
-    ${opened ? renderDetails(ev) : ""}`;
-}
-
-function linesTable(lines, title) {
-  if (!lines || !lines.length) return `<div><h4>${esc(title)}</h4><div class="na">нет данных</div></div>`;
-  return `<div><h4>${esc(title)}</h4><table class="mini">
-    <tr><th>линия</th><th>Б</th><th>М</th></tr>
-    ${lines.map((l) => `<tr><td>${l.point}</td><td>${fmt(l.over)}</td><td>${fmt(l.under)}</td></tr>`).join("")}
-  </table></div>`;
-}
-
-function renderDetails(ev) {
-  const extra = state.extras[ev.id];
-  let body;
-  if (!extra) body = `<div class="na">Загрузка индивидуальных тоталов…</div>`;
-  else if (extra.error) body = `<div class="na">Ошибка: ${esc(extra.error)}</div>`;
-  else {
-    const bm = extra.bookmakers.find((b) => b.key === state.bookmaker);
-    const tt = bm && bm.team_totals;
-    const base = ev.bookmakers.find((b) => b.key === state.bookmaker);
-    body = `<div class="details-grid">
-          ${linesTable(tt && tt.home.lines, "ИТ1 · " + ev.home)}
-          ${linesTable(tt && tt.away.lines, "ИТ2 · " + ev.away)}
-          ${linesTable(base && base.totals, "Общий тотал · все линии")}
-        </div>
-        ${tt ? "" : '<div class="na" style="margin-top:6px">Индивидуальные тоталы этой конторы по матчу в API не пришли.</div>'}`;
-  }
-  return `<tr class="details"><td colspan="13">${body}</td></tr>`;
-}
-
-function render() {
-  const rows = $("rows");
+function renderMoves() {
   if (!state.events.length) {
-    rows.innerHTML = `<tr><td colspan="13" class="na">Нет матчей с коэффициентами</td></tr>`;
+    $("moveRows").innerHTML = `<tr><td colspan="9" class="empty">Пока нет данных. Выберите лиги на вкладке «Лиги» и нажмите «Опросить сейчас» или дождитесь планового опроса.</td></tr>`;
     return;
   }
-  rows.innerHTML = state.events.map(renderRow).join("");
+  $("moveRows").innerHTML = state.events.map((ev) => `
+    <tr class="ev" data-id="${esc(ev.id)}">
+      <td class="muted">${fmtDT(ev.commence_time)}</td>
+      <td class="left"><b>${esc(ev.home)} — ${esc(ev.away)}</b><div class="muted">${esc(ev.sport_title)}</div></td>
+      <td class="muted">${ev.snapshots}<div>с ${fmtDT(ev.first_ts)}</div></td>
+      ${ev.outcomes.map((o, i) => oddCell(o, i === 0 || i === 3)).join("")}
+    </tr>
+    ${state.open.has(ev.id) ? `<tr class="details"><td colspan="9">${historyTable(ev.id)}</td></tr>` : ""}`).join("");
 }
 
-function fillBookmakers(defaultKey) {
-  const books = new Map();
-  state.events.forEach((e) => e.bookmakers.forEach((b) => books.set(b.key, b.title)));
-  const sel = $("bookmaker");
-  const prev = state.bookmaker || defaultKey;
-  sel.innerHTML = [...books].sort((a, b) => a[1].localeCompare(b[1]))
-    .map(([k, t]) => `<option value="${esc(k)}">${esc(t)}</option>`).join("");
-  state.bookmaker = books.has(prev) ? prev : (books.keys().next().value || null);
-  sel.value = state.bookmaker || "";
+async function loadMoves() {
+  state.events = await api(`/api/events?include_started=${$("startedMoves").checked}`);
+  renderMoves();
 }
 
-async function loadExtra(ev) {
-  try {
-    const data = await api(`/api/odds/${encodeURIComponent(ev.sport_key)}/${encodeURIComponent(ev.id)}/extra`);
-    state.extras[ev.id] = data.event;
-    showQuota(data.quota);
-  } catch (e) {
-    state.extras[ev.id] = { error: e.message };
-  }
-  render();
+async function toggleHistory(id) {
+  if (state.open.has(id)) { state.open.delete(id); renderMoves(); return; }
+  state.open.add(id);
+  renderMoves();
+  try { state.history[id] = (await api(`/api/events/${encodeURIComponent(id)}/history`)).history; }
+  catch (e) { state.history[id] = { error: e.message }; }
+  renderMoves();
 }
 
-async function loadOdds() {
-  const sport = $("sport").value;
-  if (!sport) return;
-  $("rows").innerHTML = `<tr><td colspan="13" class="na">Загрузка…</td></tr>`;
-  try {
-    const data = await api(`/api/odds/${encodeURIComponent(sport)}`);
-    state.events = data.events.sort((a, b) => a.commence_time.localeCompare(b.commence_time));
-    state.extras = {};
-    state.open.clear();
-    fillBookmakers(window.DEFAULT_BOOKMAKER);
-    showQuota(data.quota);
-    render();
-  } catch (e) {
-    showBanner("Ошибка загрузки коэффициентов: " + esc(e.message), true);
-    $("rows").innerHTML = "";
-  }
+// ---------- просадки ----------
+async function loadDrops() {
+  const min = parseFloat($("minPct").value) || 0;
+  let rows = await api(`/api/drops?min_pct=${min}&include_started=${$("startedDrops").checked}`);
+  if ($("onlyMain").checked) rows = rows.filter((r) => !r.derived);
+  $("dropRows").innerHTML = rows.length ? rows.map((r) => `
+    <tr>
+      <td class="pct down num">${fmtPct(r.change_pct)}</td>
+      <td class="${r.derived ? "derived" : ""}"><b>${esc(r.label)}</b></td>
+      <td class="left"><b>${esc(r.home)} — ${esc(r.away)}</b><div class="muted">${esc(r.sport_title)}</div></td>
+      <td class="muted">${fmtDT(r.commence_time)}</td>
+      <td class="num grp">${fmt(r.opening)}</td>
+      <td class="num down"><b>${fmt(r.current)}</b></td>
+      <td class="muted grp">с ${fmtDT(r.first_ts)} · ${r.snapshots} сн.</td>
+    </tr>`).join("")
+    : `<tr><td colspan="7" class="empty">Просадок от ${min}% нет</td></tr>`;
 }
 
-async function init() {
-  try {
-    const st = await api("/api/status");
-    window.DEFAULT_BOOKMAKER = st.default_bookmaker;
-    if (st.demo) showBanner("Демо-режим: ключ ODDS_API_KEY не задан, показаны сгенерированные данные.");
-    const sports = await api("/api/sports");
-    $("sport").innerHTML = sports.map((s) => `<option value="${esc(s.key)}">${esc(s.title)}</option>`).join("");
-    const saved = localStorage.getItem("sport");
-    if (saved && sports.some((s) => s.key === saved)) $("sport").value = saved;
-    await loadOdds();
-  } catch (e) {
-    showBanner("Ошибка: " + esc(e.message), true);
-  }
+// ---------- лиги ----------
+function updateEstimate() {
+  const n = document.querySelectorAll("#leagueList input:checked").length;
+  const perDay = Math.round((24 * 60) / (state.status?.interval_minutes || 30));
+  $("estimate").textContent = `Выбрано лиг: ${n} → ${n} запр. за опрос, ≈ ${n * perDay}/день, ≈ ${n * perDay * 30}/мес (бесплатный план — 500/мес)`;
 }
 
-$("sport").addEventListener("change", () => {
-  try { localStorage.setItem("sport", $("sport").value); } catch (_) {}
-  state.bookmaker = null;
-  loadOdds();
-});
-$("bookmaker").addEventListener("change", () => { state.bookmaker = $("bookmaker").value; render(); });
-$("refresh").addEventListener("click", loadOdds);
-$("autorefresh").addEventListener("change", (e) => {
-  clearInterval(state.timer);
-  if (e.target.checked) state.timer = setInterval(loadOdds, 120000);
-});
-$("rows").addEventListener("click", (e) => {
-  const id = e.target.dataset.toggle;
-  if (!id) return;
-  if (state.open.has(id)) state.open.delete(id);
-  else {
-    state.open.add(id);
-    const ev = state.events.find((x) => x.id === id);
-    if (ev && !state.extras[id]) loadExtra(ev);
-  }
-  render();
+async function loadLeagues() {
+  const sports = await api("/api/sports");
+  const tracked = new Set(state.status.tracked_sports);
+  $("leagueList").innerHTML = sports.sort((a, b) => a.title.localeCompare(b.title)).map((s) =>
+    `<label><input type="checkbox" value="${esc(s.key)}" ${tracked.has(s.key) ? "checked" : ""}> ${esc(s.title)}</label>`).join("");
+  updateEstimate();
+}
+
+$("leagueList").addEventListener("change", updateEstimate);
+$("saveLeagues").addEventListener("click", async () => {
+  const sports = [...document.querySelectorAll("#leagueList input:checked")].map((i) => i.value);
+  await api("/api/tracked", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sports }) });
+  await loadStatus();
+  $("saveLeagues").textContent = "Сохранено ✓";
+  setTimeout(() => ($("saveLeagues").textContent = "Сохранить"), 1500);
 });
 
-init();
+// ---------- общее ----------
+async function refresh() {
+  try {
+    await loadStatus();
+    if (state.tab === "moves") await loadMoves();
+    if (state.tab === "drops") await loadDrops();
+  } catch (e) { banner("Ошибка: " + esc(e.message)); }
+}
+
+function setTab(tab) {
+  state.tab = tab;
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  ["moves", "drops", "leagues"].forEach((t) => ($("tab-" + t).hidden = t !== tab));
+  try { localStorage.setItem("tab", tab); } catch (_) {}
+  if (tab === "leagues") loadLeagues().catch((e) => banner("Ошибка: " + esc(e.message)));
+  else refresh();
+}
+
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
+$("moveRows").addEventListener("click", (e) => { const tr = e.target.closest("tr.ev"); if (tr) toggleHistory(tr.dataset.id); });
+$("startedMoves").addEventListener("change", loadMoves);
+["minPct", "startedDrops", "onlyMain"].forEach((id) => $(id).addEventListener("change", loadDrops));
+$("pollNow").addEventListener("click", async () => {
+  const btn = $("pollNow");
+  btn.disabled = true; btn.textContent = "Опрашиваю…";
+  try { await api("/api/poll", { method: "POST" }); state.history = {}; await refresh(); }
+  catch (e) { banner("Ошибка опроса: " + esc(e.message)); }
+  finally { btn.disabled = false; btn.textContent = "Опросить сейчас"; }
+});
+
+(async () => {
+  await loadStatus().catch((e) => banner("Ошибка: " + esc(e.message)));
+  let saved = null;
+  try { saved = localStorage.getItem("tab"); } catch (_) {}
+  setTab(["moves", "drops", "leagues"].includes(saved) ? saved : "moves");
+  setInterval(() => { if (state.tab !== "leagues") refresh(); }, 60000); // из БД, квоту не тратит
+})();
 </script>
 </body>
 </html>
