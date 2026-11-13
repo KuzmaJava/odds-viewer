@@ -178,13 +178,12 @@ function renderDetails(ev) {
     const bm = extra.bookmakers.find((b) => b.key === state.bookmaker);
     const tt = bm && bm.team_totals;
     const base = ev.bookmakers.find((b) => b.key === state.bookmaker);
-    body = !bm
-      ? `<div class="na">У выбранной конторы нет доп. рынков по этому матчу</div>`
-      : `<div class="details-grid">
+    body = `<div class="details-grid">
           ${linesTable(tt && tt.home.lines, "ИТ1 · " + ev.home)}
           ${linesTable(tt && tt.away.lines, "ИТ2 · " + ev.away)}
           ${linesTable(base && base.totals, "Общий тотал · все линии")}
-        </div>`;
+        </div>
+        ${tt ? "" : '<div class="na" style="margin-top:6px">Индивидуальные тоталы этой конторы по матчу в API не пришли.</div>'}`;
   }
   return `<tr class="details"><td colspan="13">${body}</td></tr>`;
 }
