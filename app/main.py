@@ -30,9 +30,11 @@ client = OddsClient(
 store = Store(os.getenv("DB_PATH", str(ROOT / "data" / "odds.sqlite")))
 poller = Poller(
     client, store,
-    interval_minutes=int(os.getenv("POLL_INTERVAL_MINUTES", "30")),
-    min_quota=int(os.getenv("MIN_QUOTA_REMAINING", "10")),
     default_sports=[s.strip() for s in os.getenv("TRACK_SPORTS", "soccer_epl").split(",") if s.strip()],
+    min_quota=int(os.getenv("MIN_QUOTA_REMAINING", "10")),
+    base_hours=float(os.getenv("POLL_BASE_HOURS", "3")),
+    near_hours=float(os.getenv("POLL_NEAR_HOURS", "1")),
+    near_window_hours=float(os.getenv("NEAR_KICKOFF_HOURS", "8")),
 )
 
 
@@ -54,18 +56,22 @@ def index():
 
 @app.get("/api/status")
 def status():
-    per_poll = len(poller.sports)
-    polls_per_month = int(30 * 24 * 60 / (poller.interval.total_seconds() / 60))
+    schedule = poller.schedule()
+    hours = lambda td: td.total_seconds() / 3600  # noqa: E731
     return {
         "demo": client.demo,
         "tracked_sports": poller.sports,
-        "interval_minutes": int(poller.interval.total_seconds() // 60),
+        "policy": {
+            "base_hours": hours(poller.base),
+            "near_hours": hours(poller.near),
+            "near_window_hours": hours(poller.near_window),
+        },
+        "schedule": schedule,
         "last_poll_at": poller.last_poll_at,
-        "next_poll_at": iso(poller.next_poll_at()),
+        "next_poll_at": min((s["next_poll_at"] for s in schedule), default=None),
         "last_result": poller.last_result,
         "last_error": poller.last_error,
         "quota": client.quota,
-        "quota_estimate": {"per_poll": per_poll, "per_month": per_poll * polls_per_month},
     }
 
 

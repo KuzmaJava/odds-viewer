@@ -28,7 +28,8 @@ class FakeClient:
 
 
 def _poller(client, store):
-    return Poller(client, store, interval_minutes=30, min_quota=10, default_sports=["soccer_epl"])
+    return Poller(client, store, default_sports=["soccer_epl"], min_quota=10,
+                  base_hours=3, near_hours=1, near_window_hours=8)
 
 
 def test_change_pct():
@@ -99,3 +100,50 @@ def test_tracked_sports_persisted():
     assert p.sports == ["soccer_epl"]
     p.sports = ["soccer_spain_la_liga"]
     assert _poller(FakeClient([]), store).sports == ["soccer_spain_la_liga"]
+
+
+def _event_at(store, eid, commence):
+    store.save_snapshot({"id": eid, "sport_key": "soccer_epl", "sport_title": "EPL",
+                         "home": "A", "away": "B", "commence_time": iso(commence)},
+                        "2026-11-13T10:00:00Z", 2.0, 3.0, 4.0)
+
+
+def test_interval_is_3h_when_no_match_soon_and_1h_within_8h():
+    store = Store(":memory:")
+    p = _poller(FakeClient([]), store)
+    now = utc_now()
+    assert p.interval_for("soccer_epl", now) == timedelta(hours=3)  # матчей нет
+    _event_at(store, "far", now + timedelta(hours=20))
+    assert p.interval_for("soccer_epl", now) == timedelta(hours=3)
+    _event_at(store, "near", now + timedelta(hours=7))
+    assert p.interval_for("soccer_epl", now) == timedelta(hours=1)
+    # после начала ближнего матча — снова раз в 3 ч
+    assert p.interval_for("soccer_epl", now + timedelta(hours=7, minutes=1)) == timedelta(hours=3)
+
+
+def test_due_sports_respects_per_league_interval():
+    store = Store(":memory:")
+    p = _poller(FakeClient([]), store)
+    p.sports = ["soccer_epl", "soccer_spain_la_liga"]
+    now = utc_now()
+    assert p.due_sports(now) == ["soccer_epl", "soccer_spain_la_liga"]  # ни разу не опрашивались
+
+    two_h_ago = iso(now - timedelta(hours=2))
+    store.set_setting("last_poll_at:soccer_epl", two_h_ago)
+    store.set_setting("last_poll_at:soccer_spain_la_liga", two_h_ago)
+    assert p.due_sports(now) == []  # обе на 3-часовом интервале
+
+    _event_at(store, "near", now + timedelta(hours=5))  # матч EPL через 5 ч -> EPL раз в час
+    assert p.due_sports(now) == ["soccer_epl"]
+
+
+def test_poll_once_only_given_sports_and_records_per_league_time():
+    client = FakeClient([[]])
+    store = Store(":memory:")
+    p = _poller(client, store)
+    p.sports = ["soccer_epl", "soccer_spain_la_liga"]
+    res = p.poll_once(["soccer_spain_la_liga"])
+    assert [c[0] for c in client.calls] == ["soccer_spain_la_liga"]
+    assert res["sports"] == ["soccer_spain_la_liga"]
+    assert p.sport_last_poll("soccer_spain_la_liga") == res["at"]
+    assert p.sport_last_poll("soccer_epl") is None

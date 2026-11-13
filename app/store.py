@@ -96,6 +96,15 @@ class Store:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def next_commence(self, sport_key: str, after: str) -> Optional[str]:
+        """Время ближайшего ещё не начавшегося матча лиги (по данным последних опросов)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT MIN(commence_time) t FROM events WHERE sport_key = ? AND commence_time > ?",
+                (sport_key, after),
+            ).fetchone()
+        return row["t"] if row else None
+
     def event(self, event_id: str) -> Optional[Dict[str, Any]]:
         with self._lock:
             row = self._conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()

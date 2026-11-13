@@ -145,8 +145,12 @@ function banner(html) { $("banner").innerHTML = html ? `<div class="banner">${ht
 async function loadStatus() {
   const st = state.status = await api("/api/status");
   const q = st.quota && st.quota.remaining != null ? ` · квота: осталось ${st.quota.remaining}` : "";
+  const p = st.policy;
+  const near = st.schedule.filter((s) => s.interval_hours === p.near_hours).length;
   $("meta").textContent =
-    `Лиг: ${st.tracked_sports.length} · каждые ${st.interval_minutes} мин · последний опрос ${fmtDT(st.last_poll_at)} · следующий ${fmtT(st.next_poll_at)}${q}`;
+    `Лиг: ${st.tracked_sports.length} · раз в ${p.base_hours} ч, за ${p.near_window_hours} ч до матча — раз в ${p.near_hours} ч` +
+    (near ? ` (сейчас часто: ${near})` : "") +
+    ` · последний опрос ${fmtDT(st.last_poll_at)} · следующий ${fmtDT(st.next_poll_at)}${q}`;
   const msgs = [];
   if (st.demo) msgs.push("Демо-режим: ключ ODDS_API_KEY не задан — коэффициенты не меняются.");
   if (st.last_error) msgs.push("Ошибка последнего опроса: " + esc(st.last_error));
@@ -225,8 +229,11 @@ async function loadDrops() {
 // ---------- лиги ----------
 function updateEstimate() {
   const n = document.querySelectorAll("#leagueList input:checked").length;
-  const perDay = Math.round((24 * 60) / (state.status?.interval_minutes || 30));
-  $("estimate").textContent = `Выбрано лиг: ${n} → ${n} запр. за опрос, ≈ ${n * perDay}/день, ≈ ${n * perDay * 30}/мес (бесплатный план — 500/мес)`;
+  const p = state.status?.policy || { base_hours: 3, near_hours: 1 };
+  const min = Math.round((24 / p.base_hours) * 30);   // ни одного матча весь месяц
+  const max = Math.round((24 / p.near_hours) * 30);   // матчи в окне постоянно
+  $("estimate").textContent =
+    `Выбрано лиг: ${n} → ≈ ${n * min}–${n * max} запр./мес, для лиги с матчами по выходным обычно ≈ ${n * Math.round(min * 1.5)} (бесплатный план — 500/мес)`;
 }
 
 async function loadLeagues() {
