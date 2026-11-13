@@ -79,6 +79,7 @@
   <section id="tab-moves">
     <div class="toolbar">
       <label><input type="checkbox" id="startedMoves"> показывать начавшиеся</label>
+      <button id="csvMoves" title="Скачать текущий список матчей в CSV">Скачать CSV</button>
       <span class="muted">Значение — текущий коэффициент; под ним — от открытия. Двойной шанс (курсив) рассчитан из 1X2. Клик по матчу — история.</span>
     </div>
     <div class="scroll"><table>
@@ -254,6 +255,39 @@ async function loadMoves() {
   renderMoves();
 }
 
+// CSV текущего списка «Матчи» (с учётом галочки «показывать начавшиеся»)
+function csvCell(v) {
+  if (v == null) return "";
+  const s = String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function downloadMovesCsv() {
+  if (!state.events.length) { banner("Список матчей пуст — нечего сохранять."); return; }
+  const localDT = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso), p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  const labels = state.events[0].outcomes.map((o) => o.label);
+  const header = ["Начало", "Лига", "Хозяева", "Гости", "Снимков", "Первый снимок", "Последний снимок",
+    ...labels.flatMap((l) => [`${l} открытие`, `${l} сейчас`, `${l} изменение %`])];
+  const rows = state.events.map((ev) => [
+    localDT(ev.commence_time), ev.sport_title, ev.home, ev.away, ev.snapshots, localDT(ev.first_ts), localDT(ev.last_ts),
+    ...ev.outcomes.flatMap((o) => [o.opening, o.current, o.change_pct]),
+  ]);
+  // BOM — чтобы Excel правильно открыл кириллицу
+  const csv = "﻿" + [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `pinnacle-matches-${localDT(new Date().toISOString()).replace(/[: ]/g, "-")}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 async function toggleHistory(id) {
   if (state.open.has(id)) { state.open.delete(id); renderMoves(); return; }
   state.open.add(id);
@@ -383,6 +417,7 @@ function setTab(tab) {
 document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
 $("moveRows").addEventListener("click", (e) => { const tr = e.target.closest("tr.ev"); if (tr) toggleHistory(tr.dataset.id); });
 $("startedMoves").addEventListener("change", loadMoves);
+$("csvMoves").addEventListener("click", downloadMovesCsv);
 ["minPct", "startedDrops", "onlyMain"].forEach((id) => $(id).addEventListener("change", loadDrops));
 $("pollNow").addEventListener("click", async () => {
   if (STATIC) return; // в статическом режиме кнопка открывает GitHub (см. ниже)
