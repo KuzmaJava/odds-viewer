@@ -19,7 +19,7 @@ on:
         type: boolean
         default: false
   push:
-    branches: [main]
+    branches: [main, master]
     paths: ["static/**", "app/**", ".github/workflows/poll.yml"]
 
 permissions:
