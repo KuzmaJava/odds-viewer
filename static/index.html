@@ -113,6 +113,19 @@
       <button id="saveLeagues">Сохранить</button>
       <span class="muted" id="estimate"></span>
     </div>
+    <div id="tokenBox" class="toolbar" hidden>
+      <label>Токен GitHub
+        <input type="password" id="ghToken" placeholder="github_pat_…" autocomplete="off" style="width:260px">
+      </label>
+      <button id="saveToken">Запомнить</button>
+      <button id="forgetToken">Забыть</button>
+      <span class="muted" id="tokenState"></span>
+    </div>
+    <p class="muted" id="tokenHelp" hidden>
+      Нужен fine-grained токен: <i>Repository access</i> — только этот репозиторий, <i>Permissions</i> — <b>Actions: Read and write</b>.
+      Он хранится только в этом браузере и отправляется только на api.github.com. С таким токеном можно лишь запускать опрос — ни код, ни ключ API он не открывает.
+      <a id="tokenLink" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Создать токен</a>
+    </p>
     <p class="muted" id="staticHint"></p>
     <div class="leagues" id="leagueList">Загрузка…</div>
   </section>
@@ -290,19 +303,62 @@ $("leagueList").addEventListener("change", updateEstimate);
 $("saveLeagues").addEventListener("click", async () => {
   const sports = [...document.querySelectorAll("#leagueList input:checked")].map((i) => i.value);
   if (STATIC) {
-    // На GitHub Pages сохранять некуда: список лиг — переменная репозитория TRACK_SPORTS
-    const value = sports.join(",");
-    try { await navigator.clipboard.writeText(value); } catch (_) {}
-    const link = STATIC.repo ? `https://github.com/${STATIC.repo}/settings/variables/actions` : null;
-    $("staticHint").innerHTML = `Скопировано: <code>${esc(value)}</code>. Вставьте это значение в переменную <b>TRACK_SPORTS</b>` +
-      (link ? ` (<a href="${link}" target="_blank" rel="noopener">настройки репозитория → Variables</a>)` : "") +
-      ". Изменения вступят в силу со следующего запуска.";
+    // GitHub Pages: сохраняем через запуск workflow с новым списком лиг
+    if (!sports.length) { $("staticHint").textContent = "Выберите хотя бы одну лигу."; return; }
+    const btn = $("saveLeagues");
+    btn.disabled = true;
+    try {
+      await dispatchWorkflow({ sports: sports.join(",") });
+      $("staticHint").innerHTML = `Сохранено: запущен опрос с лигами <code>${esc(sports.join(", "))}</code>. ` +
+        `Новые лиги опросятся сразу, сайт обновится примерно через 1–2 минуты. ` +
+        `<a href="https://github.com/${STATIC.repo}/actions/workflows/poll.yml" target="_blank" rel="noopener">Ход выполнения</a>`;
+    } catch (e) {
+      $("staticHint").textContent = "Не удалось сохранить: " + e.message;
+    } finally { btn.disabled = false; }
     return;
   }
   await api("/api/tracked", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sports }) });
   await loadStatus();
   $("saveLeagues").textContent = "Сохранено ✓";
   setTimeout(() => ($("saveLeagues").textContent = "Сохранить"), 1500);
+});
+
+// ---------- запуск workflow с сайта (GitHub Pages) ----------
+const TOKEN_KEY = "gh_token";
+function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (_) { return ""; } }
+function showTokenState() {
+  $("tokenState").textContent = getToken() ? "токен сохранён в этом браузере" : "токен не задан";
+}
+
+async function dispatchWorkflow(inputs) {
+  const token = getToken();
+  if (!token) throw new Error("сначала вставьте токен GitHub и нажмите «Запомнить»");
+  if (!STATIC.repo) throw new Error("неизвестен репозиторий");
+  const r = await fetch(`https://api.github.com/repos/${STATIC.repo}/actions/workflows/poll.yml/dispatches`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+    body: JSON.stringify({ ref: STATIC.ref || "master", inputs }),
+  });
+  if (r.status === 204) return;
+  const body = await r.json().catch(() => ({}));
+  const hints = {
+    401: "токен недействителен или истёк",
+    403: "у токена нет права Actions: Read and write для этого репозитория",
+    404: "токен не видит репозиторий — проверьте Repository access",
+  };
+  throw new Error(hints[r.status] || body.message || `HTTP ${r.status}`);
+}
+
+$("saveToken").addEventListener("click", () => {
+  const v = $("ghToken").value.trim();
+  if (!v) return;
+  try { localStorage.setItem(TOKEN_KEY, v); } catch (_) { $("tokenState").textContent = "браузер не дал сохранить токен"; return; }
+  $("ghToken").value = "";
+  showTokenState();
+});
+$("forgetToken").addEventListener("click", () => {
+  try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
+  showTokenState();
 });
 
 // ---------- общее ----------
@@ -343,10 +399,25 @@ $("pollNow").addEventListener("click", async () => {
     // Опрос делает GitHub Actions — кнопка ведёт на ручной запуск workflow
     const btn = $("pollNow");
     if (STATIC.repo) {
-      btn.textContent = "Запустить опрос в GitHub";
-      btn.onclick = () => window.open(`https://github.com/${STATIC.repo}/actions/workflows/poll.yml`, "_blank", "noopener");
+      btn.textContent = "Опросить сейчас";
+      btn.onclick = async () => {
+        // С токеном — запускаем сами (force: все лиги сразу), без токена — открываем страницу workflow
+        if (!getToken()) {
+          window.open(`https://github.com/${STATIC.repo}/actions/workflows/poll.yml`, "_blank", "noopener");
+          return;
+        }
+        if (!confirm("Опросить все лиги сейчас? Это 1 запрос квоты на каждую лигу.")) return;
+        btn.disabled = true;
+        try {
+          await dispatchWorkflow({ force: true });
+          banner("Опрос запущен, сайт обновится примерно через 1–2 минуты.");
+        } catch (e) { banner("Не удалось запустить опрос: " + esc(e.message)); }
+        finally { btn.disabled = false; }
+      };
+      $("tokenBox").hidden = false;
+      $("tokenHelp").hidden = false;
+      showTokenState();
     } else btn.hidden = true;
-    $("saveLeagues").textContent = "Скопировать список для TRACK_SPORTS";
   }
   await loadStatus().catch((e) => banner("Ошибка: " + esc(e.message)));
   let saved = null;

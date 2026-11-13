@@ -18,6 +18,10 @@ on:
         description: "Опросить все лиги прямо сейчас (тратит 1 запрос квоты на лигу)"
         type: boolean
         default: false
+      sports:
+        description: "Новый список лиг через запятую (обычно задаётся с сайта, вкладка «Лиги»). Пусто — без изменений"
+        type: string
+        default: ""
   push:
     branches: [main, master]
     paths: ["static/**", "app/**", ".github/workflows/poll.yml"]
@@ -43,6 +47,7 @@ jobs:
       POLL_NEAR_HOURS: ${{ vars.POLL_NEAR_HOURS || '1' }}
       NEAR_KICKOFF_HOURS: ${{ vars.NEAR_KICKOFF_HOURS || '8' }}
       MIN_QUOTA_REMAINING: ${{ vars.MIN_QUOTA_REMAINING || '10' }}
+      DEFAULT_REF: ${{ github.event.repository.default_branch }}
     steps:
       - uses: actions/checkout@v4
 
@@ -56,13 +61,17 @@ jobs:
 
       - name: Poll (or just rebuild the site on push)
         id: run
+        env:
+          EVENT: ${{ github.event_name }}
+          FORCE: ${{ inputs.force }}
+          SPORTS_INPUT: ${{ inputs.sports }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "$EVENT" = "push" ]; then
             python -m app.cli build
-          elif [ "${{ inputs.force }}" = "true" ]; then
-            python -m app.cli run --force
+          elif [ "$FORCE" = "true" ]; then
+            python -m app.cli run --force --sports "$SPORTS_INPUT"
           else
-            python -m app.cli run
+            python -m app.cli run --sports "$SPORTS_INPUT"
           fi
 
       - name: Commit state

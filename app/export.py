@@ -28,12 +28,14 @@ def status_dict(poller: Poller, demo: bool) -> Dict[str, Any]:
     }
 
 
-def site_data(poller: Poller, demo: bool, sports: List[dict], repo: Optional[str]) -> Dict[str, Any]:
+def site_data(poller: Poller, demo: bool, sports: List[dict], repo: Optional[str],
+              ref: Optional[str] = None) -> Dict[str, Any]:
     """Всё, что нужно странице в статическом режиме, одним файлом data.json."""
     rows = poller.store.events_with_range(None)
     return {
         "generated_at": iso(utc_now()),
         "repo": repo,
+        "ref": ref,  # ветка, в которой запускать workflow с сайта
         "status": status_dict(poller, demo),
         "events": [event_movement(r) for r in rows],
         "history": {r["id"]: poller.store.history(r["id"]) for r in rows},

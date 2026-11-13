@@ -87,3 +87,50 @@ def test_cli_slack_lets_hourly_cron_catch_slightly_late_slot():
     s.set_setting("last_poll_at:soccer_epl", iso(now - timedelta(hours=2, minutes=50)))  # слот через 10 мин
     assert p.due_sports(now) == []
     assert p.due_sports(now, timedelta(minutes=cli.CRON_SLACK_MIN)) == ["soccer_epl"]
+
+
+def test_sports_from_site_override_env_and_persist(tmp_path, monkeypatch):
+    fake = FakeClient()
+    monkeypatch.setattr(cli, "build_client", lambda: fake)
+    monkeypatch.setenv("TRACK_SPORTS", "soccer_epl")
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    state, site = tmp_path / "state.json", tmp_path / "site"
+    args = ["--state", str(state), "--out", str(site)]
+
+    # Переменная репозитория работает, пока список не сохраняли с сайта
+    cli.main(["run", *args])
+    assert fake.calls == ["soccer_epl"]
+
+    # С сайта добавили лигу — опрашивается только новая (EPL ещё рано)
+    cli.main(["run", "--sports", "soccer_uefa_nations_league, soccer_epl", *args])
+    assert fake.calls == ["soccer_epl", "soccer_uefa_nations_league"]
+    saved = json.loads(state.read_text())["settings"]
+    assert saved["tracked_sports"] == ["soccer_epl", "soccer_uefa_nations_league"]
+
+    # Дальше переменная TRACK_SPORTS уже не перебивает список с сайта
+    data = json.loads((site / "data.json").read_text())
+    assert data["status"]["tracked_sports"] == ["soccer_epl", "soccer_uefa_nations_league"]
+
+
+def test_removing_league_from_site_is_saved_without_polling(tmp_path, monkeypatch):
+    fake = FakeClient()
+    monkeypatch.setattr(cli, "build_client", lambda: fake)
+    monkeypatch.setenv("TRACK_SPORTS", "soccer_epl,soccer_spain_la_liga")
+    out_file = tmp_path / "gh_out"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out_file))
+    state, site = tmp_path / "state.json", tmp_path / "site"
+    args = ["--state", str(state), "--out", str(site)]
+    cli.main(["run", *args])
+    calls = len(fake.calls)
+
+    out_file.write_text("")
+    cli.main(["run", "--sports", "soccer_epl", *args])
+    assert len(fake.calls) == calls  # ничего не опрашивали
+    assert "changed=true" in out_file.read_text()  # но state сохранён и сайт пересобран
+    assert json.loads(state.read_text())["settings"]["tracked_sports"] == ["soccer_epl"]
+
+
+def test_bad_league_key_rejected():
+    import pytest
+    with pytest.raises(SystemExit):
+        cli.parse_sports("soccer_epl; rm -rf /")

@@ -8,6 +8,7 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 from datetime import timedelta
@@ -36,8 +37,20 @@ def write_state(store: Store, path: Path) -> None:
 def build_site(poller, client, out: Path, sports) -> None:
     out.mkdir(parents=True, exist_ok=True)
     shutil.copy(ROOT / "static" / "index.html", out / "index.html")
-    data = site_data(poller, client.demo, sports, os.getenv("GITHUB_REPOSITORY"))
+    data = site_data(poller, client.demo, sports, os.getenv("GITHUB_REPOSITORY"),
+                     os.getenv("DEFAULT_REF") or os.getenv("GITHUB_REF_NAME"))
     (out / "data.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def parse_sports(raw: str):
+    """'a, b' -> ['a', 'b']; пустая строка -> None. Ключи лиг: только a-z, 0-9 и _."""
+    if not raw or not raw.strip():
+        return None
+    keys = sorted({k.strip() for k in raw.split(",") if k.strip()})
+    bad = [k for k in keys if not re.fullmatch(r"[a-z0-9_]+", k)]
+    if bad:
+        raise SystemExit(f"Некорректные ключи лиг: {bad}")
+    return keys
 
 
 def set_output(name: str, value: str) -> None:
@@ -59,6 +72,7 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true", help="опросить все лиги, не глядя на расписание")
     ap.add_argument("--state", default=str(ROOT / "data" / "state.json"))
     ap.add_argument("--out", default=str(ROOT / "_site"))
+    ap.add_argument("--sports", default="", help="новый список лиг через запятую (с сайта, через workflow_dispatch)")
     args = ap.parse_args(argv)
 
     state_path, out = Path(args.state), Path(args.out)
@@ -68,11 +82,19 @@ def main(argv=None) -> int:
 
     client = build_client()
     poller = build_poller(client, store)
-    if env_sports():  # в Actions список лиг задаётся переменной репозитория TRACK_SPORTS
-        poller.sports = env_sports()
-
     sports = store.get_setting("sports_catalog", [])
     changed = args.command == "build"
+
+    # Откуда берём список лиг: 1) с сайта (--sports), сохраняется в state;
+    # 2) ранее сохранённый с сайта; 3) переменная репозитория TRACK_SPORTS; 4) soccer_epl.
+    new_sports = parse_sports(args.sports)
+    if new_sports is not None:
+        if new_sports != poller.sports or not store.get_setting("tracked_sports_from_ui"):
+            changed = True
+        poller.sports = new_sports
+        store.set_setting("tracked_sports_from_ui", True)
+    elif not store.get_setting("tracked_sports_from_ui") and env_sports():
+        poller.sports = env_sports()
 
     if args.command == "run":
         if client.demo:
@@ -90,9 +112,10 @@ def main(argv=None) -> int:
                 store.set_setting("sports_catalog", sports)
             except Exception as e:  # noqa: BLE001
                 print(f"Не удалось получить список лиг: {e}", file=sys.stderr)
-            write_state(store, state_path)
             changed = True
 
+    if changed and args.command == "run":
+        write_state(store, state_path)
     if changed:
         build_site(poller, client, out, sports)
     set_output("changed", "true" if changed else "false")
