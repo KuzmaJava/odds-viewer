@@ -1,5 +1,5 @@
 {"version": 1,
-"settings": {"last_poll_at": "2026-11-13T19:26:22Z", "last_poll_at:soccer_epl": "2026-11-13T19:26:22Z"},
+"settings": {"last_poll_at": "2026-11-13T19:26:22Z", "last_poll_at:soccer_epl": "2026-11-13T19:26:22Z", "last_result": {"at": "2026-11-13T20:15:28Z", "errors": ["soccer_epl: Invalid API key"], "snapshots_saved": 0, "sports": []}, "tracked_sports": ["soccer_epl"]},
 "events": [
 {"id": "6ef39b0fd8839f6e93a3de32523e9807", "sport_key": "soccer_epl", "sport_title": "EPL", "home": "Manchester City", "away": "Fulham", "commence_time": "2026-11-21T12:30:00Z", "snapshots": [["2026-11-13T19:26:22Z", 1.43, 5.18, 6.61]]},
 {"id": "9f38413bdad666e2d2dfcc574dd12e66", "sport_key": "soccer_epl", "sport_title": "EPL", "home": "Coventry City", "away": "Crystal Palace", "commence_time": "2026-11-21T15:00:00Z", "snapshots": [["2026-11-13T19:26:22Z", 2.45, 3.61, 2.85]]},
