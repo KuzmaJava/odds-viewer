@@ -48,17 +48,31 @@ def event_movement(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def drops(events: List[Dict[str, Any]], min_drop_pct: float) -> List[Dict[str, Any]]:
-    """Плоский список просадок (коэффициент упал минимум на min_drop_pct %), самые сильные сверху."""
+def _moves(events: List[Dict[str, Any]], min_pct: float, rising: bool) -> List[Dict[str, Any]]:
+    """Плоский список исходов, у которых коэффициент сдвинулся от открытия минимум на min_pct %
+    вниз (rising=False) или вверх (rising=True). Самые сильные движения сверху."""
+    threshold = abs(min_pct)
     res = []
     for ev in events:
         for o in ev["outcomes"]:
             ch = o["change_pct"]
-            if ch is not None and ch <= -abs(min_drop_pct):
+            if ch is None or ch == 0:
+                continue
+            if (rising and ch >= threshold) or (not rising and ch <= -threshold):
                 res.append({
                     "event_id": ev["id"], "sport_title": ev["sport_title"],
                     "home": ev["home"], "away": ev["away"], "commence_time": ev["commence_time"],
                     "snapshots": ev["snapshots"], "first_ts": ev["first_ts"], "last_ts": ev["last_ts"],
                     **o,
                 })
-    return sorted(res, key=lambda d: d["change_pct"])
+    return sorted(res, key=lambda d: d["change_pct"], reverse=rising)
+
+
+def drops(events: List[Dict[str, Any]], min_drop_pct: float) -> List[Dict[str, Any]]:
+    """Просадки: коэффициент упал минимум на min_drop_pct %."""
+    return _moves(events, min_drop_pct, rising=False)
+
+
+def rises(events: List[Dict[str, Any]], min_rise_pct: float) -> List[Dict[str, Any]]:
+    """Повышения: коэффициент вырос минимум на min_rise_pct %."""
+    return _moves(events, min_rise_pct, rising=True)

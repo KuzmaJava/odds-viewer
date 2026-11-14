@@ -147,3 +147,25 @@ def test_poll_once_only_given_sports_and_records_per_league_time():
     assert res["sports"] == ["soccer_spain_la_liga"]
     assert p.sport_last_poll("soccer_spain_la_liga") == res["at"]
     assert p.sport_last_poll("soccer_epl") is None
+
+
+def test_rises_list_sorted_strongest_first_and_excludes_drops():
+    from app.movement import rises
+    store = Store(":memory:")
+    future = iso(utc_now() + timedelta(days=1))
+    ev = {"id": "a", "sport_key": "soccer_epl", "sport_title": "EPL",
+          "home": "Arsenal", "away": "Chelsea", "commence_time": future}
+    store.save_snapshot(ev, "2026-11-13T10:00:00Z", 2.0, 3.5, 4.0)
+    store.save_snapshot(ev, "2026-11-13T11:00:00Z", 1.8, 3.6, 4.6)  # П1 -10%, X +2.86%, П2 +15%
+
+    mv = event_movement(store.events_with_range(None)[0])
+    found = rises([mv], min_rise_pct=3)
+    codes = [r["code"] for r in found]
+    assert codes[0] == "away" and found[0]["change_pct"] == 15.0
+    assert "home" not in codes          # просадка сюда не попадает
+    assert "draw" not in codes          # +2.86% меньше порога
+    assert all(r["change_pct"] >= 3 for r in found)
+    assert [r["change_pct"] for r in found] == sorted((r["change_pct"] for r in found), reverse=True)
+
+    # нулевой порог: всё, что выросло, но не «без изменений»
+    assert "draw" in [r["code"] for r in rises([mv], 0)]

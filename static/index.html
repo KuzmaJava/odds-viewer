@@ -66,6 +66,7 @@
   <nav>
     <button data-tab="moves" class="active">Матчи</button>
     <button data-tab="drops">Просадки</button>
+    <button data-tab="rises">Повышения</button>
     <button data-tab="leagues">Лиги</button>
   </nav>
   <div class="spacer"></div>
@@ -105,6 +106,22 @@
         <th class="grp">Открытие</th><th>Сейчас</th><th class="grp">Отслеживается</th>
       </tr></thead>
       <tbody id="dropRows"></tbody>
+    </table></div>
+  </section>
+
+  <!-- Повышения -->
+  <section id="tab-rises" hidden>
+    <div class="toolbar">
+      <label>Рост от <input type="number" id="minPctRise" value="3" min="0" step="0.5" style="width:70px"> %</label>
+      <label><input type="checkbox" id="startedRises"> включая начавшиеся</label>
+      <label><input type="checkbox" id="onlyMainRise"> только П1 / X / П2</label>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr>
+        <th>Δ</th><th>Исход</th><th class="left">Матч</th><th>Начало</th>
+        <th class="grp">Открытие</th><th>Сейчас</th><th class="grp">Отслеживается</th>
+      </tr></thead>
+      <tbody id="riseRows"></tbody>
     </table></div>
   </section>
 
@@ -159,15 +176,19 @@ async function loadStaticData() {
   } catch (_) { /* не статический режим */ }
 }
 
-function staticDrops(events, minPct) {
+// То же, что app/movement.py: исходы, сдвинувшиеся от открытия минимум на minPct % вниз или вверх
+function staticMoves(events, minPct, rising) {
+  const t = Math.abs(minPct);
   const res = [];
   for (const ev of events) for (const o of ev.outcomes) {
-    if (o.change_pct != null && o.change_pct <= -Math.abs(minPct)) {
+    const ch = o.change_pct;
+    if (ch == null || ch === 0) continue;
+    if (rising ? ch >= t : ch <= -t) {
       res.push({ event_id: ev.id, sport_title: ev.sport_title, home: ev.home, away: ev.away,
         commence_time: ev.commence_time, snapshots: ev.snapshots, first_ts: ev.first_ts, last_ts: ev.last_ts, ...o });
     }
   }
-  return res.sort((a, b) => a.change_pct - b.change_pct);
+  return res.sort((a, b) => (rising ? b.change_pct - a.change_pct : a.change_pct - b.change_pct));
 }
 
 function staticApi(path, opts) {
@@ -179,7 +200,8 @@ function staticApi(path, opts) {
   const events = STATIC.events.filter((e) => started || e.commence_time > now);
   if (p === "/api/status") return STATIC.status;
   if (p === "/api/events") return events;
-  if (p === "/api/drops") return staticDrops(events, parseFloat(url.searchParams.get("min_pct")) || 0);
+  if (p === "/api/drops") return staticMoves(events, parseFloat(url.searchParams.get("min_pct")) || 0, false);
+  if (p === "/api/rises") return staticMoves(events, parseFloat(url.searchParams.get("min_pct")) || 0, true);
   if (p === "/api/sports") return STATIC.sports || [];
   const m = p.match(/^\/api\/events\/(.+)\/history$/);
   if (m) return { history: STATIC.history[decodeURIComponent(m[1])] || [] };
@@ -297,23 +319,31 @@ async function toggleHistory(id) {
   renderMoves();
 }
 
-// ---------- просадки ----------
-async function loadDrops() {
-  const min = parseFloat($("minPct").value) || 0;
-  let rows = await api(`/api/drops?min_pct=${min}&include_started=${$("startedDrops").checked}`);
-  if ($("onlyMain").checked) rows = rows.filter((r) => !r.derived);
-  $("dropRows").innerHTML = rows.length ? rows.map((r) => `
+// ---------- просадки и повышения ----------
+const MOVE_LISTS = {
+  drops: { endpoint: "drops", min: "minPct", started: "startedDrops", onlyMain: "onlyMain", rows: "dropRows", cls: "down", empty: "Просадок" },
+  rises: { endpoint: "rises", min: "minPctRise", started: "startedRises", onlyMain: "onlyMainRise", rows: "riseRows", cls: "up", empty: "Повышений" },
+};
+
+async function loadMoveList(kind) {
+  const c = MOVE_LISTS[kind];
+  const min = parseFloat($(c.min).value) || 0;
+  let rows = await api(`/api/${c.endpoint}?min_pct=${min}&include_started=${$(c.started).checked}`);
+  if ($(c.onlyMain).checked) rows = rows.filter((r) => !r.derived);
+  $(c.rows).innerHTML = rows.length ? rows.map((r) => `
     <tr>
-      <td class="pct down num">${fmtPct(r.change_pct)}</td>
+      <td class="pct ${c.cls} num">${fmtPct(r.change_pct)}</td>
       <td class="${r.derived ? "derived" : ""}"><b>${esc(r.label)}</b></td>
       <td class="left"><b>${esc(r.home)} — ${esc(r.away)}</b><div class="muted">${esc(r.sport_title)}</div></td>
       <td class="muted">${fmtDT(r.commence_time)}</td>
       <td class="num grp">${fmt(r.opening)}</td>
-      <td class="num down"><b>${fmt(r.current)}</b></td>
+      <td class="num ${c.cls}"><b>${fmt(r.current)}</b></td>
       <td class="muted grp">с ${fmtDT(r.first_ts)} · ${r.snapshots} сн.</td>
     </tr>`).join("")
-    : `<tr><td colspan="7" class="empty">Просадок от ${min}% нет</td></tr>`;
+    : `<tr><td colspan="7" class="empty">${c.empty} от ${min}% нет</td></tr>`;
 }
+const loadDrops = () => loadMoveList("drops");
+const loadRises = () => loadMoveList("rises");
 
 // ---------- лиги ----------
 function updateEstimate() {
@@ -402,13 +432,16 @@ async function refresh() {
     await loadStatus();
     if (state.tab === "moves") await loadMoves();
     if (state.tab === "drops") await loadDrops();
+    if (state.tab === "rises") await loadRises();
   } catch (e) { banner("Ошибка: " + esc(e.message)); }
 }
+
+const TABS = ["moves", "drops", "rises", "leagues"];
 
 function setTab(tab) {
   state.tab = tab;
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  ["moves", "drops", "leagues"].forEach((t) => ($("tab-" + t).hidden = t !== tab));
+  TABS.forEach((t) => ($("tab-" + t).hidden = t !== tab));
   try { localStorage.setItem("tab", tab); } catch (_) {}
   if (tab === "leagues") loadLeagues().catch((e) => banner("Ошибка: " + esc(e.message)));
   else refresh();
@@ -419,6 +452,7 @@ $("moveRows").addEventListener("click", (e) => { const tr = e.target.closest("tr
 $("startedMoves").addEventListener("change", loadMoves);
 $("csvMoves").addEventListener("click", downloadMovesCsv);
 ["minPct", "startedDrops", "onlyMain"].forEach((id) => $(id).addEventListener("change", loadDrops));
+["minPctRise", "startedRises", "onlyMainRise"].forEach((id) => $(id).addEventListener("change", loadRises));
 $("pollNow").addEventListener("click", async () => {
   if (STATIC) return; // в статическом режиме кнопка открывает GitHub (см. ниже)
   const btn = $("pollNow");
@@ -457,7 +491,7 @@ $("pollNow").addEventListener("click", async () => {
   await loadStatus().catch((e) => banner("Ошибка: " + esc(e.message)));
   let saved = null;
   try { saved = localStorage.getItem("tab"); } catch (_) {}
-  setTab(["moves", "drops", "leagues"].includes(saved) ? saved : "moves");
+  setTab(TABS.includes(saved) ? saved : "moves");
   setInterval(() => { if (state.tab !== "leagues") refresh(); }, 60000); // из БД, квоту не тратит
 })();
 </script>

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.movement import drops, event_movement
+from app.movement import drops, event_movement, rises
 from app.config import build_client, build_poller
 from app.export import status_dict
 from app.odds_client import OddsApiError
@@ -88,6 +88,11 @@ def events(include_started: bool = False):
 @app.get("/api/drops")
 def get_drops(min_pct: float = 3.0, include_started: bool = False):
     return drops(_movements(include_started), min_pct)
+
+
+@app.get("/api/rises")
+def get_rises(min_pct: float = 3.0, include_started: bool = False):
+    return rises(_movements(include_started), min_pct)
 
 
 @app.get("/api/events/{event_id}/history")
