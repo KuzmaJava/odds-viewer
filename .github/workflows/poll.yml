@@ -47,7 +47,7 @@ jobs:
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       TRACK_SPORTS: ${{ vars.TRACK_SPORTS || 'soccer_epl' }}
       POLL_BASE_HOURS: ${{ vars.POLL_BASE_HOURS || '3' }}
-      POLL_NEAR_HOURS: ${{ vars.POLL_NEAR_HOURS || '1' }}
+      POLL_NEAR_HOURS: ${{ vars.POLL_NEAR_HOURS || '2' }}
       NEAR_KICKOFF_HOURS: ${{ vars.NEAR_KICKOFF_HOURS || '8' }}
       MIN_QUOTA_REMAINING: ${{ vars.MIN_QUOTA_REMAINING || '10' }}
       LEAGUE_MARKETS: ${{ vars.LEAGUE_MARKETS || 'h2h' }}

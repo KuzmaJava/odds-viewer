@@ -27,7 +27,7 @@ def build_poller(client: OddsClient, store: Store) -> Poller:
         default_sports=env_sports() or ["soccer_epl"],
         min_quota=int(os.getenv("MIN_QUOTA_REMAINING", "10")),
         base_hours=float(os.getenv("POLL_BASE_HOURS", "3")),
-        near_hours=float(os.getenv("POLL_NEAR_HOURS", "1")),
+        near_hours=float(os.getenv("POLL_NEAR_HOURS", "2")),
         near_window_hours=float(os.getenv("NEAR_KICKOFF_HOURS", "8")),
         league_markets=os.getenv("LEAGUE_MARKETS") or "h2h",
         lines_window_hours=float(os.getenv("LINES_WINDOW_HOURS", "24")),
