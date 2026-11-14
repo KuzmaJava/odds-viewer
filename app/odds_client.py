@@ -73,11 +73,21 @@ class OddsClient:
             params["regions"] = self.regions
         return self._get(f"/sports/{sport}/odds", params, ttl=None if use_cache else 0)
 
-    def event_odds(self, sport: str, event_id: str, markets: str) -> dict:
-        """Доп. рынки (team_totals, double_chance...) для одного матча."""
+    def events(self, sport: str) -> List[dict]:
+        """Предстоящие матчи лиги без коэффициентов. Не тратит квоту."""
+        if self.demo:
+            return [{k: e[k] for k in ("id", "sport_key", "sport_title", "commence_time", "home_team", "away_team")}
+                    for e in demo.odds(sport)]
+        return self._get(f"/sports/{sport}/events", {"dateFormat": "iso"}, ttl=0)
+
+    def event_odds(self, sport: str, event_id: str, markets: str, bookmakers: Optional[str] = None) -> dict:
+        """Рынки одного матча (в т.ч. double_chance, team_totals — только здесь).
+        Стоимость = число рынков, которые реально вернулись; пустой ответ бесплатен."""
         if self.demo:
             return demo.event_odds(sport, event_id)
-        return self._get(
-            f"/sports/{sport}/events/{event_id}/odds",
-            {"regions": self.regions, "markets": markets, "oddsFormat": "decimal", "dateFormat": "iso"},
-        )
+        params: Dict[str, Any] = {"markets": markets, "oddsFormat": "decimal", "dateFormat": "iso"}
+        if bookmakers:
+            params["bookmakers"] = bookmakers
+        else:
+            params["regions"] = self.regions
+        return self._get(f"/sports/{sport}/events/{event_id}/odds", params, ttl=0)

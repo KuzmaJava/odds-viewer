@@ -25,7 +25,7 @@ def test_dump_load_roundtrip_and_prunes_old_events():
 
     s2 = Store(":memory:")
     s2.load(json.loads(json.dumps(data)))
-    assert [h["home"] for h in s2.history("f")] == [2.0, 1.9]
+    assert [h["p"]["home"][0] for h in s2.history("f")] == [2.0, 1.9]
     assert s2.get_setting("tracked_sports") == ["soccer_epl"]
 
 
@@ -45,6 +45,9 @@ class FakeClient:
             "bookmakers": [{"key": "pinnacle", "title": "Pinnacle", "markets": [{"key": "h2h", "outcomes": [
                 {"name": "A", "price": 2.0}, {"name": "B", "price": 3.5}, {"name": "Draw", "price": 3.3}]}]}],
         }]
+
+    def events(self, sport):
+        return []
 
     def sports(self):
         return [{"key": "soccer_epl", "title": "EPL", "group": "Soccer", "active": True, "has_outrights": False}]
@@ -66,7 +69,7 @@ def test_cli_run_polls_due_then_skips_until_next_slot(tmp_path, monkeypatch):
     assert data["status"]["quota"]["remaining"] == "300"
     assert data["sports"][0]["key"] == "soccer_epl"
     assert (site / "index.html").exists()
-    assert json.loads(state.read_text())["events"][0]["snapshots"][0][1] == 2.0
+    assert json.loads(state.read_text())["events"][0]["snapshots"][0][1]["home"] == [2.0]
 
     # Сразу второй запуск: по расписанию ещё рано — без запросов и без изменений
     out_file.write_text("")

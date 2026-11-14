@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.movement import drops, event_movement, rises
+from app.movement import MARKETS, drops, movements, rises
 from app.config import build_client, build_poller
 from app.export import status_dict
 from app.odds_client import OddsApiError
@@ -71,13 +71,18 @@ def set_tracked(body: TrackedSports):
 
 @app.post("/api/poll")
 async def poll_now():
-    """Внеплановый опрос (тратит квоту: 1 запрос на лигу)."""
-    return await asyncio.to_thread(poller.poll_once)
+    """Внеплановый опрос всех лиг (тратит квоту)."""
+    return await asyncio.to_thread(poller.run_cycle, True)
 
 
 def _movements(include_started: bool):
     since = None if include_started else iso(utc_now())
-    return [event_movement(r) for r in store.events_with_range(since)]
+    return movements(store, since)
+
+
+@app.get("/api/markets")
+def markets():
+    return MARKETS
 
 
 @app.get("/api/events")

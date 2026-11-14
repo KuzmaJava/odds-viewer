@@ -6,7 +6,7 @@
   totals       -> общий тотал (основная линия + все линии)
   team_totals  -> индивидуальные тоталы (только через event-эндпоинт)
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def _round(x: Optional[float]) -> Optional[float]:
@@ -135,3 +135,56 @@ def normalize_event(ev: dict) -> Dict[str, Any]:
         "away": away,
         "bookmakers": [normalize_bookmaker(bm, home, away) for bm in ev.get("bookmakers", [])],
     }
+
+
+# --- плоские цены для трекера: код исхода -> (коэффициент, линия) ---
+
+def _main_spread(outcomes: List[dict], home: str, away: str) -> Optional[Dict[str, Any]]:
+    """Основная фора: пара (фора хозяев, фора гостей) с самыми близкими коэффициентами."""
+    pairs: Dict[float, Dict[str, Any]] = {}
+    for o in outcomes:
+        point = o.get("point")
+        if point is None:
+            continue
+        if o.get("name") == home:
+            pairs.setdefault(point, {"point": point})["home"] = o.get("price")
+        elif o.get("name") == away:
+            pairs.setdefault(-point, {"point": -point})["away"] = o.get("price")
+    full = [p for p in pairs.values() if p.get("home") and p.get("away")]
+    return min(full, key=lambda p: abs(p["home"] - p["away"])) if full else None
+
+
+def flat_prices(bm: dict, home: str, away: str) -> Dict[str, Tuple[float, Optional[float]]]:
+    """Все цены одной конторы: {"home": (1.75, None), "over": (1.95, 2.5), "ah_home": (1.98, -0.75), ...}.
+    Для тоталов и фор берётся основная линия."""
+    markets = {m["key"]: m.get("outcomes", []) for m in bm.get("markets", [])}
+    res: Dict[str, Tuple[float, Optional[float]]] = {}
+
+    def put(code: str, price: Optional[float], point: Optional[float] = None) -> None:
+        if price:
+            res[code] = (price, point)
+
+    if "h2h" in markets:
+        for code, price in _parse_h2h(markets["h2h"], home, away).items():
+            put(code, price)
+    if "double_chance" in markets:
+        for code, price in _parse_double_chance(markets["double_chance"], home, away).items():
+            put(code, price)
+    if "totals" in markets:
+        line = main_line(_parse_over_under(markets["totals"]))
+        if line:
+            put("over", line["over"], line["point"])
+            put("under", line["under"], line["point"])
+    if "spreads" in markets:
+        sp = _main_spread(markets["spreads"], home, away)
+        if sp:
+            put("ah_home", sp["home"], sp["point"])
+            put("ah_away", sp["away"], -sp["point"])
+    if "team_totals" in markets:
+        for side, lines in _parse_team_totals(markets["team_totals"], home, away).items():
+            line = main_line(lines)
+            if line:
+                prefix = "it1" if side == "home" else "it2"
+                put(f"{prefix}_over", line["over"], line["point"])
+                put(f"{prefix}_under", line["under"], line["point"])
+    return res

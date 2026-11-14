@@ -48,6 +48,8 @@
   td.odd.down-bg { background: var(--drop-bg); }
   td.odd.up-bg { background: var(--rise-bg); }
   .derived { font-style: italic; }
+  td.odd .pt { font-size: 11px; color: var(--muted); }
+  td.odd .pt.moved { color: var(--accent); font-weight: 600; }
   tbody tr.ev { cursor: pointer; }
   tbody tr.ev:hover { background: var(--row-hover); }
   tr.details > td { background: var(--bg); text-align: left; padding: 10px 14px; }
@@ -71,7 +73,7 @@
   </nav>
   <div class="spacer"></div>
   <div class="meta" id="meta"></div>
-  <button id="pollNow" title="Внеплановый опрос: 1 запрос квоты на каждую лигу">Опросить сейчас</button>
+  <button id="pollNow" title="Внеплановый опрос всех лиг (тратит квоту)">Опросить сейчас</button>
 </header>
 <div id="banner"></div>
 
@@ -81,14 +83,12 @@
     <div class="toolbar">
       <label><input type="checkbox" id="startedMoves"> показывать начавшиеся</label>
       <button id="csvMoves" title="Скачать текущий список матчей в CSV">Скачать CSV</button>
-      <span class="muted">Значение — текущий коэффициент; под ним — от открытия. Двойной шанс (курсив) рассчитан из 1X2. Клик по матчу — история.</span>
+      <span class="muted">Значение — текущий коэффициент; под ним — открытие и изменение. Для тотала и форы сверху линия
+        (синим — если линия сдвинулась, тогда сравнение по текущей линии). Реальный двойной шанс снимается при появлении матча и за час до старта,
+        между ними — курсивом расчёт из 1X2. Клик по матчу — история.</span>
     </div>
     <div class="scroll"><table>
-      <thead><tr>
-        <th>Начало</th><th class="left">Матч</th><th>Снимков</th>
-        <th class="grp">П1</th><th>X</th><th>П2</th>
-        <th class="grp">1X</th><th>12</th><th>X2</th>
-      </tr></thead>
+      <thead id="moveHead"></thead>
       <tbody id="moveRows"></tbody>
     </table></div>
   </section>
@@ -98,7 +98,7 @@
     <div class="toolbar">
       <label>Просадка от <input type="number" id="minPct" value="3" min="0" step="0.5" style="width:70px"> %</label>
       <label><input type="checkbox" id="startedDrops"> включая начавшиеся</label>
-      <label><input type="checkbox" id="onlyMain"> только П1 / X / П2</label>
+      <label>Рынок <select id="marketDrops" class="marketSel"></select></label>
     </div>
     <div class="scroll"><table>
       <thead><tr>
@@ -114,7 +114,7 @@
     <div class="toolbar">
       <label>Рост от <input type="number" id="minPctRise" value="3" min="0" step="0.5" style="width:70px"> %</label>
       <label><input type="checkbox" id="startedRises"> включая начавшиеся</label>
-      <label><input type="checkbox" id="onlyMainRise"> только П1 / X / П2</label>
+      <label>Рынок <select id="marketRises" class="marketSel"></select></label>
     </div>
     <div class="scroll"><table>
       <thead><tr>
@@ -163,6 +163,27 @@ const fmtDT = (iso) => {
          d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 };
 const fmtT = (iso) => (iso ? new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "—");
+
+// ---------- рынки и колонки ----------
+const COLS = [
+  ["home", "П1", "1x2"], ["draw", "X", "1x2"], ["away", "П2", "1x2"],
+  ["1X", "1X", "dc"], ["12", "12", "dc"], ["X2", "X2", "dc"],
+  ["over", "ТБ", "total"], ["under", "ТМ", "total"],
+  ["ah_home", "Ф1", "spread"], ["ah_away", "Ф2", "spread"],
+  ["it1_over", "ИТ1Б", "team_total"], ["it1_under", "ИТ1М", "team_total"],
+  ["it2_over", "ИТ2Б", "team_total"], ["it2_under", "ИТ2М", "team_total"],
+];
+const MARKET_NAMES = { "1x2": "1X2", dc: "Двойной шанс", total: "Тотал", spread: "Фора", team_total: "Инд. тотал" };
+const HANDICAP = new Set(["ah_home", "ah_away"]);
+const fmtPt = (code, pt) => (pt == null ? "" : HANDICAP.has(code) && pt > 0 ? "+" + pt : String(pt).replace("-", "−"));
+const outcomeName = (o) => o.point != null ? `${o.label} ${fmtPt(o.code, o.point)}` : o.label;
+
+// Колонки, по которым есть данные хотя бы у одного матча (инд. тоталы Pinnacle на футбол обычно не даёт)
+function visibleCols(events) {
+  const have = new Set(events.flatMap((e) => e.outcomes.map((o) => o.code)));
+  const base = new Set(["home", "draw", "away", "1X", "12", "X2"]);
+  return COLS.filter(([code]) => base.has(code) || have.has(code));
+}
 
 // ---------- источник данных ----------
 // Статический режим (GitHub Pages): рядом со страницей лежит data.json, собранный GitHub Actions.
@@ -225,7 +246,7 @@ async function loadStatus() {
   const p = st.policy;
   const near = st.schedule.filter((s) => s.interval_hours === p.near_hours).length;
   $("meta").textContent =
-    `Лиг: ${st.tracked_sports.length} · раз в ${p.base_hours} ч, за ${p.near_window_hours} ч до матча — раз в ${p.near_hours} ч` +
+    `Лиг: ${st.tracked_sports.length} · новые матчи — каждые 15 мин · опрос раз в ${p.base_hours} ч, за ${p.near_window_hours} ч до матча — раз в ${p.near_hours} ч` +
     (near ? ` (сейчас часто: ${near})` : "") +
     ` · последний опрос ${fmtDT(st.last_poll_at)} · следующий ${fmtDT(st.next_poll_at)}${q}`;
   if (STATIC) $("meta").textContent += ` · данные собраны ${fmtDT(STATIC.generated_at)}`;
@@ -237,11 +258,13 @@ async function loadStatus() {
 
 // ---------- матчи ----------
 function oddCell(o, first) {
+  if (!o) return `<td class="odd num muted ${first ? "grp" : ""}">—</td>`;
   const ch = o.change_pct;
   const dir = ch == null || ch === 0 ? "" : ch < 0 ? "down" : "up";
   const bg = ch != null && Math.abs(ch) >= 3 ? ` ${dir}-bg` : "";
   const delta = ch ? `<div class="delta ${dir}">${fmt(o.opening)} · ${fmtPct(ch)}</div>` : `<div class="delta muted">без изменений</div>`;
-  return `<td class="odd num ${first ? "grp" : ""}${bg} ${o.derived ? "derived" : ""}" title="Открытие ${fmt(o.opening)} → сейчас ${fmt(o.current)}">
+  return `<td class="odd num ${first ? "grp" : ""}${bg} ${o.derived ? "derived" : ""}" title="${esc(outcomeName(o))}: открытие ${fmt(o.opening)} (${fmtDT(o.open_ts)}) → сейчас ${fmt(o.current)} (${fmtDT(o.cur_ts)})${o.derived ? " · двойной шанс частично рассчитан из 1X2" : ""}">
+    ${o.point != null ? `<div class="pt ${o.open_point !== o.point ? "moved" : ""}">${o.open_point !== o.point ? fmtPt(o.code, o.open_point) + " → " : ""}${fmtPt(o.code, o.point)}</div>` : ""}
     <div class="cur">${fmt(o.current)}</div>${delta}</td>`;
 }
 
@@ -249,27 +272,42 @@ function historyTable(id) {
   const h = state.history[id];
   if (!h) return `<span class="muted">Загрузка…</span>`;
   if (h.error) return `<span class="muted">Ошибка: ${esc(h.error)}</span>`;
-  return `<table class="hist"><thead><tr><th>Снимок</th><th>П1</th><th>X</th><th>П2</th><th>1X</th><th>12</th><th>X2</th></tr></thead><tbody>
-    ${h.map((r) => {
-      const dc = (a, b) => (a && b ? 1 / (1 / a + 1 / b) : null);
-      return `<tr><td>${fmtDT(r.ts)}</td><td class="num">${fmt(r.home)}</td><td class="num">${fmt(r.draw)}</td><td class="num">${fmt(r.away)}</td>
-        <td class="num derived">${fmt(dc(r.home, r.draw))}</td><td class="num derived">${fmt(dc(r.home, r.away))}</td><td class="num derived">${fmt(dc(r.draw, r.away))}</td></tr>`;
-    }).join("")}</tbody></table>`;
+  const dc = (p, a, b) => (p[a] && p[b] ? [1 / (1 / p[a][0] + 1 / p[b][0]), null, true] : null);
+  const rows = h.map((r) => {
+    const p = { ...r.p };
+    if (!p["1X"]) { p["1X"] = dc(p, "home", "draw"); p["12"] = dc(p, "home", "away"); p["X2"] = dc(p, "draw", "away"); }
+    return { ts: r.ts, p };
+  });
+  const cols = COLS.filter(([code]) => rows.some((r) => r.p[code]));
+  return `<table class="hist"><thead><tr><th>Снимок</th>${cols.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead><tbody>
+    ${rows.map((r) => `<tr><td>${fmtDT(r.ts)}</td>${cols.map(([code]) => {
+      const v = r.p[code];
+      if (!v) return `<td class="muted">—</td>`;
+      const pt = v[1] != null ? ` <span class="muted">${fmtPt(code, v[1])}</span>` : "";
+      return `<td class="num ${v[2] ? "derived" : ""}">${fmt(v[0])}${pt}</td>`;
+    }).join("")}</tr>`).join("")}</tbody></table>`;
 }
 
 function renderMoves() {
+  const cols = visibleCols(state.events);
+  const span = 3 + cols.length;
+  $("moveHead").innerHTML = `<tr><th>Начало</th><th class="left">Матч</th><th>Снимков</th>
+    ${cols.map(([, l, m], i) => `<th class="${i === 0 || cols[i - 1][2] !== m ? "grp" : ""}" title="${MARKET_NAMES[m]}">${l}</th>`).join("")}</tr>`;
   if (!state.events.length) {
-    $("moveRows").innerHTML = `<tr><td colspan="9" class="empty">Пока нет данных. Выберите лиги на вкладке «Лиги» и нажмите «Опросить сейчас» или дождитесь планового опроса.</td></tr>`;
+    $("moveRows").innerHTML = `<tr><td colspan="${span}" class="empty">Пока нет данных. Выберите лиги на вкладке «Лиги» и нажмите «Опросить сейчас» или дождитесь планового опроса.</td></tr>`;
     return;
   }
-  $("moveRows").innerHTML = state.events.map((ev) => `
+  $("moveRows").innerHTML = state.events.map((ev) => {
+    const by = Object.fromEntries(ev.outcomes.map((o) => [o.code, o]));
+    return `
     <tr class="ev" data-id="${esc(ev.id)}">
       <td class="muted">${fmtDT(ev.commence_time)}</td>
       <td class="left"><b>${esc(ev.home)} — ${esc(ev.away)}</b><div class="muted">${esc(ev.sport_title)}</div></td>
       <td class="muted">${ev.snapshots}<div>с ${fmtDT(ev.first_ts)}</div></td>
-      ${ev.outcomes.map((o, i) => oddCell(o, i === 0 || i === 3)).join("")}
+      ${cols.map(([code, , m], i) => oddCell(by[code], i === 0 || cols[i - 1][2] !== m)).join("")}
     </tr>
-    ${state.open.has(ev.id) ? `<tr class="details"><td colspan="9">${historyTable(ev.id)}</td></tr>` : ""}`).join("");
+    ${state.open.has(ev.id) ? `<tr class="details"><td colspan="${span}">${historyTable(ev.id)}</td></tr>` : ""}`;
+  }).join("");
 }
 
 async function loadMoves() {
@@ -291,13 +329,21 @@ function downloadMovesCsv() {
     const d = new Date(iso), p = (n) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   };
-  const labels = state.events[0].outcomes.map((o) => o.label);
+  const cols = visibleCols(state.events);
+  const withLine = (m) => m === "total" || m === "spread" || m === "team_total";
   const header = ["Начало", "Лига", "Хозяева", "Гости", "Снимков", "Первый снимок", "Последний снимок",
-    ...labels.flatMap((l) => [`${l} открытие`, `${l} сейчас`, `${l} изменение %`])];
-  const rows = state.events.map((ev) => [
-    localDT(ev.commence_time), ev.sport_title, ev.home, ev.away, ev.snapshots, localDT(ev.first_ts), localDT(ev.last_ts),
-    ...ev.outcomes.flatMap((o) => [o.opening, o.current, o.change_pct]),
-  ]);
+    ...cols.flatMap(([, l, m]) => [...(withLine(m) ? [`${l} линия открытия`, `${l} линия`] : []),
+      `${l} открытие`, `${l} сейчас`, `${l} изменение %`])];
+  const rows = state.events.map((ev) => {
+    const by = Object.fromEntries(ev.outcomes.map((o) => [o.code, o]));
+    return [
+      localDT(ev.commence_time), ev.sport_title, ev.home, ev.away, ev.snapshots, localDT(ev.first_ts), localDT(ev.last_ts),
+      ...cols.flatMap(([code, , m]) => {
+        const o = by[code] || {};
+        return [...(withLine(m) ? [o.open_point, o.point] : []), o.opening, o.current, o.change_pct];
+      }),
+    ];
+  });
   // BOM — чтобы Excel правильно открыл кириллицу
   const csv = "﻿" + [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -321,24 +367,26 @@ async function toggleHistory(id) {
 
 // ---------- просадки и повышения ----------
 const MOVE_LISTS = {
-  drops: { endpoint: "drops", min: "minPct", started: "startedDrops", onlyMain: "onlyMain", rows: "dropRows", cls: "down", empty: "Просадок" },
-  rises: { endpoint: "rises", min: "minPctRise", started: "startedRises", onlyMain: "onlyMainRise", rows: "riseRows", cls: "up", empty: "Повышений" },
+  drops: { endpoint: "drops", min: "minPct", started: "startedDrops", market: "marketDrops", rows: "dropRows", cls: "down", empty: "Просадок" },
+  rises: { endpoint: "rises", min: "minPctRise", started: "startedRises", market: "marketRises", rows: "riseRows", cls: "up", empty: "Повышений" },
 };
 
 async function loadMoveList(kind) {
   const c = MOVE_LISTS[kind];
   const min = parseFloat($(c.min).value) || 0;
   let rows = await api(`/api/${c.endpoint}?min_pct=${min}&include_started=${$(c.started).checked}`);
-  if ($(c.onlyMain).checked) rows = rows.filter((r) => !r.derived);
+  const market = $(c.market).value;
+  if (market) rows = rows.filter((r) => r.market === market);
   $(c.rows).innerHTML = rows.length ? rows.map((r) => `
     <tr>
       <td class="pct ${c.cls} num">${fmtPct(r.change_pct)}</td>
-      <td class="${r.derived ? "derived" : ""}"><b>${esc(r.label)}</b></td>
+      <td class="${r.derived ? "derived" : ""}" title="${MARKET_NAMES[r.market] || ""}${r.derived ? " · частично рассчитан из 1X2" : ""}"><b>${esc(outcomeName(r))}</b>${
+        r.point != null && r.open_point !== r.point ? `<div class="muted">линия была ${fmtPt(r.code, r.open_point)}</div>` : ""}</td>
       <td class="left"><b>${esc(r.home)} — ${esc(r.away)}</b><div class="muted">${esc(r.sport_title)}</div></td>
       <td class="muted">${fmtDT(r.commence_time)}</td>
       <td class="num grp">${fmt(r.opening)}</td>
       <td class="num ${c.cls}"><b>${fmt(r.current)}</b></td>
-      <td class="muted grp">с ${fmtDT(r.first_ts)} · ${r.snapshots} сн.</td>
+      <td class="muted grp">с ${fmtDT(r.open_ts)} · ${r.snapshots} сн.</td>
     </tr>`).join("")
     : `<tr><td colspan="7" class="empty">${c.empty} от ${min}% нет</td></tr>`;
 }
@@ -348,11 +396,12 @@ const loadRises = () => loadMoveList("rises");
 // ---------- лиги ----------
 function updateEstimate() {
   const n = document.querySelectorAll("#leagueList input:checked").length;
-  const p = state.status?.policy || { base_hours: 3, near_hours: 1 };
-  const min = Math.round((24 / p.base_hours) * 30);   // ни одного матча весь месяц
-  const max = Math.round((24 / p.near_hours) * 30);   // матчи в окне постоянно
+  const p = state.status?.policy || { base_hours: 3, near_hours: 1, league_markets: "h2h,totals,spreads" };
+  const k = (p.league_markets || "h2h").split(",").length;          // рынков в плановом опросе
+  const polls = Math.round((24 / p.base_hours) * 30 * 1.3);          // ≈ опросов лиги в месяц (с учётом «часто перед матчем»)
   $("estimate").textContent =
-    `Выбрано лиг: ${n} → ≈ ${n * min}–${n * max} запр./мес, для лиги с матчами по выходным обычно ≈ ${n * Math.round(min * 1.5)} (бесплатный план — 500/мес)`;
+    `Выбрано лиг: ${n} → плановые опросы ≈ ${n * polls * k} запр./мес (${k} рынка за опрос) ` +
+    `+ ≈ 7 на каждый новый матч (открытие и закрытие с реальным двойным шансом). Бесплатный план — 500/мес.`;
 }
 
 async function loadLeagues() {
@@ -450,9 +499,12 @@ function setTab(tab) {
 document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
 $("moveRows").addEventListener("click", (e) => { const tr = e.target.closest("tr.ev"); if (tr) toggleHistory(tr.dataset.id); });
 $("startedMoves").addEventListener("change", loadMoves);
+document.querySelectorAll(".marketSel").forEach((sel) => {
+  sel.innerHTML = `<option value="">все</option>` + Object.entries(MARKET_NAMES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+});
 $("csvMoves").addEventListener("click", downloadMovesCsv);
-["minPct", "startedDrops", "onlyMain"].forEach((id) => $(id).addEventListener("change", loadDrops));
-["minPctRise", "startedRises", "onlyMainRise"].forEach((id) => $(id).addEventListener("change", loadRises));
+["minPct", "startedDrops", "marketDrops"].forEach((id) => $(id).addEventListener("change", loadDrops));
+["minPctRise", "startedRises", "marketRises"].forEach((id) => $(id).addEventListener("change", loadRises));
 $("pollNow").addEventListener("click", async () => {
   if (STATIC) return; // в статическом режиме кнопка открывает GitHub (см. ниже)
   const btn = $("pollNow");
@@ -475,7 +527,7 @@ $("pollNow").addEventListener("click", async () => {
           window.open(`https://github.com/${STATIC.repo}/actions/workflows/poll.yml`, "_blank", "noopener");
           return;
         }
-        if (!confirm("Опросить все лиги сейчас? Это 1 запрос квоты на каждую лигу.")) return;
+        if (!confirm("Опросить все лиги сейчас? Это 3 запроса квоты на каждую лигу (1X2, тотал, фора).")) return;
         btn.disabled = true;
         try {
           await dispatchWorkflow({ force: true });

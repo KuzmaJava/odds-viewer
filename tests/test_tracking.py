@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from app.movement import change_pct, drops, event_movement
+from app.movement import change_pct, drops, event_movement, movements
 from app.poller import Poller, iso, utc_now
 from app.store import Store
 
@@ -26,6 +26,9 @@ class FakeClient:
         self.calls.append((sport, markets, bookmakers, use_cache))
         return self.responses.pop(0)
 
+    def events(self, sport):
+        return []
+
 
 def _poller(client, store):
     return Poller(client, store, default_sports=["soccer_epl"], min_quota=10,
@@ -47,8 +50,8 @@ def test_poll_saves_only_upcoming_pinnacle_h2h():
     result = _poller(client, store).poll_once()
 
     assert result["snapshots_saved"] == 1
-    assert client.calls == [("soccer_epl", "h2h", "pinnacle", False)]
-    assert store.history("a")[0]["home"] == 2.0
+    assert client.calls == [("soccer_epl", "h2h,totals,spreads", "pinnacle", False)]
+    assert store.history("a")[0]["p"]["home"] == [2.0, None]
     assert store.history("live") == []
     assert store.get_setting("last_poll_at") == result["at"]
 
@@ -62,8 +65,8 @@ def test_movement_from_opening_to_current_and_drops_list():
     store.save_snapshot(ev, "2026-11-13T10:30:00Z", 1.9, 3.5, 4.4)
     store.save_snapshot(ev, "2026-11-13T11:00:00Z", 1.8, 3.6, 4.6)
 
-    rows = store.events_with_range(iso(utc_now()))
-    mv = event_movement(rows[0])
+    rows = store.events(iso(utc_now()))
+    mv = event_movement(rows[0], store.snapshots(rows[0]["id"]))
     by = {o["code"]: o for o in mv["outcomes"]}
     assert mv["snapshots"] == 3
     assert by["home"]["opening"] == 2.0 and by["home"]["current"] == 1.8
@@ -82,8 +85,8 @@ def test_started_events_filtered_out():
     past = iso(utc_now() - timedelta(hours=2))
     ev = {"id": "p", "sport_key": "s", "sport_title": "S", "home": "A", "away": "B", "commence_time": past}
     store.save_snapshot(ev, "2026-11-13T10:00:00Z", 2.0, 3.0, 4.0)
-    assert store.events_with_range(iso(utc_now())) == []
-    assert len(store.events_with_range(None)) == 1
+    assert store.events(iso(utc_now())) == []
+    assert len(store.events(None)) == 1
 
 
 def test_poll_stops_when_quota_low():
@@ -158,7 +161,7 @@ def test_rises_list_sorted_strongest_first_and_excludes_drops():
     store.save_snapshot(ev, "2026-11-13T10:00:00Z", 2.0, 3.5, 4.0)
     store.save_snapshot(ev, "2026-11-13T11:00:00Z", 1.8, 3.6, 4.6)  # П1 -10%, X +2.86%, П2 +15%
 
-    mv = event_movement(store.events_with_range(None)[0])
+    mv = movements(store)[0]
     found = rises([mv], min_rise_pct=3)
     codes = [r["code"] for r in found]
     assert codes[0] == "away" and found[0]["change_pct"] == 15.0

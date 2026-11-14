@@ -1,7 +1,10 @@
 # Опрос Pinnacle по расписанию и публикация сайта на GitHub Pages.
 #
-# Cron стартует раз в час; скрипт сам решает, каким лигам пора (раз в 3 ч, за 8 ч до матча — раз в час).
-# Если опрашивать нечего — ничего не коммитится и не публикуется (квота не тратится).
+# Cron стартует каждые 15 минут:
+#  - бесплатно проверяет список матчей; новый матч сразу снимается со всеми рынками (открытие линии);
+#  - лиги опрашиваются по расписанию (раз в 3 ч, за 8 ч до матча — раз в час);
+#  - за час до старта снимается реальный двойной шанс (линия закрытия).
+# Если ничего не изменилось — ничего не коммитится и не публикуется.
 #
 # Настройка (один раз):
 #   Settings → Secrets and variables → Actions → Secrets:   ODDS_API_KEY
@@ -11,11 +14,11 @@ name: Poll Pinnacle
 
 on:
   schedule:
-    - cron: "7 * * * *"
+    - cron: "4,19,34,49 * * * *"
   workflow_dispatch:
     inputs:
       force:
-        description: "Опросить все лиги прямо сейчас (тратит 1 запрос квоты на лигу)"
+        description: "Опросить все лиги прямо сейчас (тратит до 3 запросов квоты на лигу)"
         type: boolean
         default: false
       sports:
@@ -47,6 +50,8 @@ jobs:
       POLL_NEAR_HOURS: ${{ vars.POLL_NEAR_HOURS || '1' }}
       NEAR_KICKOFF_HOURS: ${{ vars.NEAR_KICKOFF_HOURS || '8' }}
       MIN_QUOTA_REMAINING: ${{ vars.MIN_QUOTA_REMAINING || '10' }}
+      LEAGUE_MARKETS: ${{ vars.LEAGUE_MARKETS || 'h2h,totals,spreads' }}
+      CLOSE_WINDOW_MIN: ${{ vars.CLOSE_WINDOW_MIN || '60' }}
       DEFAULT_REF: ${{ github.event.repository.default_branch }}
     steps:
       - uses: actions/checkout@v4

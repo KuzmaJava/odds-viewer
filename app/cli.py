@@ -1,6 +1,6 @@
-"""Запуск трекера без сервера — для GitHub Actions (cron раз в час).
+"""Запуск трекера без сервера — для GitHub Actions (cron каждые 15 минут).
 
-    python -m app.cli run   [--force]   # опросить лиги, которым пора, обновить state и собрать сайт
+    python -m app.cli run   [--force]   # новые матчи, лиги по расписанию, линии закрытия; state + сайт
     python -m app.cli build             # только собрать сайт из state (без запросов к API)
 
 Состояние хранится в JSON-файле (data/state.json), который коммитится в репозиторий.
@@ -21,13 +21,13 @@ from app.store import Store
 
 ROOT = Path(__file__).resolve().parent.parent
 KEEP_DAYS = 14          # начавшиеся матчи храним две недели, потом удаляем из state
-CRON_SLACK_MIN = 20     # допуск: cron стартует раз в час и может опаздывать
+CRON_SLACK_MIN = 10     # допуск: cron стартует раз в 15 мин и может опаздывать
 
 
 def write_state(store: Store, path: Path) -> None:
     data = store.dump(drop_commenced_before=iso(utc_now() - timedelta(days=KEEP_DAYS)))
     # По строке на матч — чтобы diff в git оставался читаемым и маленьким
-    lines = ['{"version": 1,', f'"settings": {json.dumps(data["settings"], ensure_ascii=False, sort_keys=True)},', '"events": [']
+    lines = [f'{{"version": {data["version"]},', f'"settings": {json.dumps(data["settings"], ensure_ascii=False, sort_keys=True)},', '"events": [']
     lines.append(",\n".join(json.dumps(e, ensure_ascii=False) for e in data["events"]))
     lines.append("]}")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -100,19 +100,18 @@ def main(argv=None) -> int:
         if client.demo:
             print("ODDS_API_KEY не задан", file=sys.stderr)
             return 1
-        now = utc_now()
-        due = poller.sports if args.force else poller.due_sports(now, timedelta(minutes=CRON_SLACK_MIN))
-        print(f"Отслеживаемые лиги: {poller.sports}; к опросу: {due or 'нет'}")
-        if due:
-            result = poller.poll_once(due)
-            print(json.dumps(result, ensure_ascii=False))
+        due = poller.sports if args.force else poller.due_sports(utc_now(), timedelta(minutes=CRON_SLACK_MIN))
+        print(f"Отслеживаемые лиги: {poller.sports}; к плановому опросу: {due or 'нет'}")
+        result = poller.run_cycle(force=args.force, slack=timedelta(minutes=CRON_SLACK_MIN))
+        print(json.dumps(result, ensure_ascii=False))
+        if result["sports"] or not sports:
             try:  # список лиг — бесплатный запрос, нужен странице для вкладки «Лиги»
                 sports = [s for s in client.sports() if s.get("active") and not s.get("has_outrights")
                           and s.get("group") == "Soccer"]
                 store.set_setting("sports_catalog", sports)
             except Exception as e:  # noqa: BLE001
                 print(f"Не удалось получить список лиг: {e}", file=sys.stderr)
-            changed = True
+        changed = changed or result["changed"]
 
     if changed and args.command == "run":
         write_state(store, state_path)
