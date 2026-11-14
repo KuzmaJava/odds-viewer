@@ -42,9 +42,9 @@ class Poller:
     def __init__(self, client: OddsClient, store: Store, default_sports: List[str], min_quota: int = 10,
                  base_hours: float = 3, near_hours: float = 1, near_window_hours: float = 8,
                  league_markets: str = "h2h",
-                 open_markets: str = "h2h,double_chance,alternate_totals,alternate_spreads,team_totals",
-                 lines_markets: str = "alternate_totals,alternate_spreads",
-                 close_markets: str = "h2h,double_chance,alternate_totals,alternate_spreads,team_totals",
+                 open_markets: str = "h2h,double_chance,alternate_totals,alternate_spreads,team_totals,alternate_team_totals",
+                 lines_markets: str = "alternate_totals,alternate_spreads,team_totals,alternate_team_totals",
+                 close_markets: str = "h2h,double_chance,alternate_totals,alternate_spreads,team_totals,alternate_team_totals",
                  lines_window_hours: float = 24,
                  close_window_min: float = 60, cycle_seconds: int = 900):
         self.client = client
