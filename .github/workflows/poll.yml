@@ -27,7 +27,7 @@ on:
         default: ""
   push:
     branches: [main, master]
-    paths: ["static/**", "app/**", ".github/workflows/poll.yml"]
+    paths: ["static/**", "app/**", ".github/workflows/poll.yml", "data/state.json"]  # пуши бота сюда не попадают (GITHUB_TOKEN не запускает workflow)
 
 permissions:
   contents: write
