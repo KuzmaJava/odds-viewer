@@ -38,7 +38,27 @@
 3. **Settings → Pages → Source: GitHub Actions**.
 4. **Actions → Poll Pinnacle → Run workflow** (галочка «force» — опросить сразу).
 
-Ограничения: запуски по cron могут опаздывать на 5–15 минут; на бесплатном плане Pages работает только у публичного репозитория.
+### Надёжный запуск каждые 15 минут (cron-job.org)
+
+Расписание GitHub Actions работает «по возможности»: у небольших репозиториев запуски задерживаются на часы
+или пропадают. Поэтому workflow запускается снаружи — бесплатным [cron-job.org](https://cron-job.org)
+(cron в самом workflow остаётся запасным; одновременные запуски идут по очереди и квоту дважды не тратят).
+
+1. GitHub → Settings → Developer settings → Fine-grained tokens → новый токен:
+   Repository access — только `odds-viewer`, Permissions — **Actions: Read and write**.
+2. cron-job.org → Create cronjob:
+   - URL: `https://api.github.com/repos/KuzmaJava/odds-viewer/actions/workflows/poll.yml/dispatches`
+   - Schedule: Every 15 minutes
+   - Advanced → Request method: **POST**
+   - Headers: `Authorization: Bearer <токен>`, `Accept: application/vnd.github+json`, `Content-Type: application/json`
+   - Request body: `{"ref":"master"}`
+3. «Test run» → ответ `204` — запуск принят (виден в Actions как `workflow_dispatch`).
+
+Скрипт сам решает, что делать в каждом запуске: проверка новых матчей бесплатна, лиги опрашиваются раз в 3 ч
+(за 8 ч до матча — раз в час), так что частый запуск квоту не тратит. Токен истекает — продлите его в GitHub
+и обновите заголовок в cron-job.org.
+
+Ограничения: запуски по cron GitHub могут опаздывать или пропадать (см. выше); на бесплатном плане Pages работает только у публичного репозитория.
 В публичном репозитории GitHub может отключить расписание после 60 дней без активности — придёт письмо, включается одной кнопкой.
 
 ## Локальный запуск
