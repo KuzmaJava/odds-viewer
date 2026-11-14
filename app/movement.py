@@ -1,15 +1,15 @@
 """Движение коэффициентов: открытие -> текущее значение по каждому исходу всех рынков.
 
-- Для тоталов, фор и инд. тоталов сравниваем цены одной и той же линии: «открытие» — первый снимок
-  с той же линией, что сейчас; если линия сдвигалась, это видно по open_point.
+- Тоталы и форы: каждая нечетвертная линия — отдельный исход ("over@2.5", "ah_home@-1"), открытие и
+  текущее значение сравниваются в пределах одной линии. main=True — основная линия (Б и М ближе всего).
 - Реальный двойной шанс Pinnacle снимается только при появлении матча и перед стартом (он дорогой).
   В остальных снимках он рассчитывается из 1X2 того же снимка — такие значения помечены derived.
 """
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.markets import derive_double_chance
+from app.markets import derive_double_chance, split_code
 
-# (код, подпись, рынок)
+# (базовый код, подпись, рынок)
 OUTCOMES = [
     ("home", "П1", "1x2"), ("draw", "X", "1x2"), ("away", "П2", "1x2"),
     ("1X", "1X", "dc"), ("12", "12", "dc"), ("X2", "X2", "dc"),
@@ -18,8 +18,11 @@ OUTCOMES = [
     ("it1_over", "ИТ1Б", "team_total"), ("it1_under", "ИТ1М", "team_total"),
     ("it2_over", "ИТ2Б", "team_total"), ("it2_under", "ИТ2М", "team_total"),
 ]
+BASE = {code: (i, label, market) for i, (code, label, market) in enumerate(OUTCOMES)}
 MARKETS = {"1x2": "1X2", "dc": "Двойной шанс", "total": "Тотал", "spread": "Фора", "team_total": "Инд. тотал"}
 DC_CODES = ("1X", "12", "X2")
+# пары исходов одной линии: (код A, код B, знак линии B относительно A)
+PAIRS = [("over", "under", 1), ("ah_home", "ah_away", -1), ("it1_over", "it1_under", 1), ("it2_over", "it2_under", 1)]
 
 Snap = Tuple[str, Dict[str, Tuple[float, Optional[float]]]]
 
@@ -41,28 +44,60 @@ def _with_dc(prices: Dict[str, Tuple[float, Optional[float]]]) -> Dict[str, Tupl
     return res
 
 
-def outcome_movement(snaps: List[Snap], code: str) -> Optional[Dict[str, Any]]:
-    seen = [(ts, p[code]) for ts, p in ((ts, _with_dc(pr)) for ts, pr in snaps) if code in p]
-    if not seen:
-        return None
-    cur_ts, (cur, point, cur_derived) = seen[-1]
-    same_line = [s for s in seen if s[1][1] == point]
-    open_ts, (opening, _, open_derived) = same_line[0]
-    return {
-        "opening": opening, "current": cur, "change_pct": change_pct(opening, cur),
-        "point": point, "open_point": seen[0][1][1],
-        "open_ts": open_ts, "cur_ts": cur_ts,
-        "derived": open_derived or cur_derived,
-    }
+def _fmt_point(base: str, point: float) -> str:
+    s = f"{point:g}"
+    return f"+{s}" if base.startswith("ah_") and point > 0 else s
+
+
+def _main_lines(current: Dict[str, Tuple[float, Optional[float], bool]]) -> set:
+    """Основная линия каждого рынка по текущим ценам: где коэффициенты пары ближе всего."""
+    main = set()
+    for a, b, sign in PAIRS:
+        best = None
+        for code, (price, point, _) in current.items():
+            if split_code(code)[0] != a or point is None:
+                continue
+            other = current.get(f"{b}@{sign * point + 0.0:g}")
+            if other and (best is None or abs(price - other[0]) < best[0]):
+                best = (abs(price - other[0]), code, f"{b}@{sign * point + 0.0:g}")
+        if best:
+            main.update(best[1:])
+    return main
 
 
 def event_movement(row: Dict[str, Any], snaps: List[Snap]) -> Dict[str, Any]:
     """row — строка из Store.events(), snaps — Store.snapshots(id)."""
+    full = [(ts, _with_dc(p)) for ts, p in snaps]
+    first: Dict[str, Tuple[str, Tuple[float, Optional[float], bool]]] = {}
+    last: Dict[str, Tuple[str, Tuple[float, Optional[float], bool]]] = {}
+    count: Dict[str, int] = {}
+    for ts, prices in full:
+        for code, v in prices.items():
+            first.setdefault(code, (ts, v))
+            last[code] = (ts, v)
+            count[code] = count.get(code, 0) + 1
+    main = _main_lines({c: v for c, (_, v) in last.items()})
+
+    def order(code: str):
+        base, point = split_code(code)
+        return (BASE.get(base, (99,))[0], point if point is not None else 0)
+
     outcomes = []
-    for code, label, market in OUTCOMES:
-        mv = outcome_movement(snaps, code)
-        if mv:
-            outcomes.append({"code": code, "label": label, "market": market, **mv})
+    for code in sorted(last, key=order):
+        base, point = split_code(code)
+        if base not in BASE:
+            continue
+        _, label, market = BASE[base]
+        open_ts, (opening, _, open_derived) = first[code]
+        cur_ts, (cur, _, cur_derived) = last[code]
+        outcomes.append({
+            "code": code, "base": base, "market": market,
+            "label": label if point is None else f"{label} {_fmt_point(base, point)}",
+            "point": point, "main": code in main or point is None,
+            "opening": opening, "current": cur, "change_pct": change_pct(opening, cur),
+            "open_ts": open_ts, "cur_ts": cur_ts, "n": count[code],
+            "derived": open_derived or cur_derived,
+        })
     return {
         "id": row["id"],
         "sport_key": row["sport_key"],

@@ -1,13 +1,15 @@
 """SQLite-хранилище: матчи, снимки цен Pinnacle по всем рынкам, настройки.
 
 Снимок — набор цен, снятых в один момент (ts). Каждая цена — строка (код исхода, линия, коэффициент):
-  home/draw/away, 1X/12/X2, over/under (линия тотала), ah_home/ah_away (фора), it1_over/... (инд. тоталы).
+  home/draw/away, 1X/12/X2, over@2.5/under@2.5 (тоталы), ah_home@-1/ah_away@1 (форы), it1_over@1.5/... (инд. тоталы).
 """
 import json
 import sqlite3
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+from app.markets import LINE_BASES, is_quarter, line_code
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -178,7 +180,7 @@ class Store:
                     self.save_snapshot(meta, *snap)
                 else:
                     ts, prices = snap
-                    self.save_prices(meta, ts, {c: (v[0], v[1] if len(v) > 1 else None) for c, v in prices.items()})
+                    self.save_prices(meta, ts, _upgrade_codes(prices))
             if not snaps:
                 continue
             # Матчи из старого формата уже были в базе до появления «открытия» — считаем их открытыми
@@ -186,3 +188,17 @@ class Store:
                 value = ev.get(field) or (snaps[0][0] if v1 and field == "opened_at" else None)
                 if value:
                     self.mark(meta["id"], field, value)
+
+
+def _upgrade_codes(prices: Dict[str, list]) -> Prices:
+    """Ранние снимки v2 хранили одну основную линию под кодом без линии ("over", point=2.5):
+    переводим в "over@2.5", четвертные линии отбрасываем."""
+    res: Prices = {}
+    for code, v in prices.items():
+        price, point = v[0], (v[1] if len(v) > 1 else None)
+        if code in LINE_BASES and point is not None:
+            if is_quarter(point):
+                continue
+            code = line_code(code, point)
+        res[code] = (price, point)
+    return res

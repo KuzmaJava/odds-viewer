@@ -49,6 +49,9 @@ class FakeClient:
     def events(self, sport):
         return []
 
+    def event_odds(self, sport, event_id, markets, bookmakers):
+        return {}
+
     def sports(self):
         return [{"key": "soccer_epl", "title": "EPL", "group": "Soccer", "active": True, "has_outrights": False}]
 

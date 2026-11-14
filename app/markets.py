@@ -138,53 +138,60 @@ def normalize_event(ev: dict) -> Dict[str, Any]:
 
 
 # --- плоские цены для трекера: код исхода -> (коэффициент, линия) ---
+# Коды линий: "over@2.5", "under@2.5", "ah_home@-1", "ah_away@1", "it1_over@1.5"...
+# Четвертные линии (x.25 / x.75 — ставка делится на две соседние) не берём.
 
-def _main_spread(outcomes: List[dict], home: str, away: str) -> Optional[Dict[str, Any]]:
-    """Основная фора: пара (фора хозяев, фора гостей) с самыми близкими коэффициентами."""
-    pairs: Dict[float, Dict[str, Any]] = {}
-    for o in outcomes:
-        point = o.get("point")
-        if point is None:
-            continue
-        if o.get("name") == home:
-            pairs.setdefault(point, {"point": point})["home"] = o.get("price")
-        elif o.get("name") == away:
-            pairs.setdefault(-point, {"point": -point})["away"] = o.get("price")
-    full = [p for p in pairs.values() if p.get("home") and p.get("away")]
-    return min(full, key=lambda p: abs(p["home"] - p["away"])) if full else None
+def is_quarter(point: float) -> bool:
+    return not float(point * 2).is_integer()
+
+
+LINE_BASES = ("over", "under", "ah_home", "ah_away", "it1_over", "it1_under", "it2_over", "it2_under")
+
+
+def line_code(base: str, point: float) -> str:
+    return f"{base}@{float(point) + 0.0:g}"  # + 0.0: -0.0 -> 0
+
+
+def split_code(code: str) -> Tuple[str, Optional[float]]:
+    base, _, pt = code.partition("@")
+    return base, (float(pt) if pt else None)
 
 
 def flat_prices(bm: dict, home: str, away: str) -> Dict[str, Tuple[float, Optional[float]]]:
-    """Все цены одной конторы: {"home": (1.75, None), "over": (1.95, 2.5), "ah_home": (1.98, -0.75), ...}.
-    Для тоталов и фор берётся основная линия."""
-    markets = {m["key"]: m.get("outcomes", []) for m in bm.get("markets", [])}
+    """Все цены одной конторы: {"home": (1.75, None), "over@2.5": (1.92, 2.5), "ah_home@-1": (2.44, -1.0), ...}.
+    Тоталы и форы — все нечетвертные линии (из totals/spreads и alternate_*)."""
+    markets: Dict[str, List[dict]] = {}
+    for m in bm.get("markets", []):
+        key = m["key"].replace("alternate_", "")
+        markets.setdefault(key, []).extend(m.get("outcomes", []))
     res: Dict[str, Tuple[float, Optional[float]]] = {}
 
     def put(code: str, price: Optional[float], point: Optional[float] = None) -> None:
-        if price:
-            res[code] = (price, point)
+        if not price:
+            return
+        if point is None:
+            res[code] = (price, None)
+        elif not is_quarter(point):
+            point = float(point) + 0.0  # -0.0 -> 0.0
+            res[line_code(code, point)] = (price, point)
 
-    if "h2h" in markets:
-        for code, price in _parse_h2h(markets["h2h"], home, away).items():
-            put(code, price)
-    if "double_chance" in markets:
-        for code, price in _parse_double_chance(markets["double_chance"], home, away).items():
-            put(code, price)
-    if "totals" in markets:
-        line = main_line(_parse_over_under(markets["totals"]))
-        if line:
-            put("over", line["over"], line["point"])
-            put("under", line["under"], line["point"])
-    if "spreads" in markets:
-        sp = _main_spread(markets["spreads"], home, away)
-        if sp:
-            put("ah_home", sp["home"], sp["point"])
-            put("ah_away", sp["away"], -sp["point"])
-    if "team_totals" in markets:
-        for side, lines in _parse_team_totals(markets["team_totals"], home, away).items():
-            line = main_line(lines)
-            if line:
-                prefix = "it1" if side == "home" else "it2"
-                put(f"{prefix}_over", line["over"], line["point"])
-                put(f"{prefix}_under", line["under"], line["point"])
+    for code, price in _parse_h2h(markets.get("h2h", []), home, away).items():
+        put(code, price)
+    for code, price in _parse_double_chance(markets.get("double_chance", []), home, away).items():
+        put(code, price)
+    for line in _parse_over_under(markets.get("totals", [])):
+        put("over", line["over"], line["point"])
+        put("under", line["under"], line["point"])
+    for o in markets.get("spreads", []):
+        if o.get("point") is None:
+            continue
+        if o.get("name") == home:
+            put("ah_home", o.get("price"), o["point"])
+        elif o.get("name") == away:
+            put("ah_away", o.get("price"), o["point"])
+    for side, lines in _parse_team_totals(markets.get("team_totals", []), home, away).items():
+        prefix = "it1" if side == "home" else "it2"
+        for line in lines:
+            put(f"{prefix}_over", line["over"], line["point"])
+            put(f"{prefix}_under", line["under"], line["point"])
     return res

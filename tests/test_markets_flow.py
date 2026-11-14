@@ -7,7 +7,7 @@ from app.poller import Poller, iso, utc_now
 from app.store import Store
 
 
-def _bm(h2h=(1.75, 3.81, 4.98), dc=None, total=(2.5, 1.95, 1.93), spread=(-0.75, 1.98, 1.93)):
+def _bm(h2h=(1.75, 3.81, 4.98), dc=None, total=(2.5, 1.95, 1.93), spread=(-0.5, 1.98, 1.93)):
     markets = [{"key": "h2h", "outcomes": [{"name": "Kosovo", "price": h2h[0]}, {"name": "Draw", "price": h2h[1]},
                                            {"name": "Israel", "price": h2h[2]}]}]
     if dc:
@@ -35,27 +35,52 @@ def _raw(eid, commence, bm=None):
 def test_flat_prices_all_markets():
     p = flat_prices(_bm(dc=(1.2, 1.3, 2.15)), "Kosovo", "Israel")
     assert p["home"] == (1.75, None) and p["X2"] == (2.15, None) and p["12"] == (1.3, None)
-    assert p["over"] == (1.95, 2.5) and p["under"] == (1.93, 2.5)
-    assert p["ah_home"] == (1.98, -0.75) and p["ah_away"] == (1.93, 0.75)
+    assert p["over@2.5"] == (1.95, 2.5) and p["under@2.5"] == (1.93, 2.5)
+    assert p["ah_home@-0.5"] == (1.98, -0.5) and p["ah_away@0.5"] == (1.93, 0.5)
 
 
-def test_total_movement_compares_same_line_and_dc_real_vs_derived():
+def test_all_lines_without_quarter_lines():
+    bm = {"markets": [
+        {"key": "alternate_spreads", "outcomes": [
+            {"name": "Kosovo", "point": 0.0, "price": 1.33}, {"name": "Israel", "point": -0.0, "price": 3.5},
+            {"name": "Kosovo", "point": -0.75, "price": 2.03}, {"name": "Israel", "point": 0.75, "price": 1.88},
+            {"name": "Kosovo", "point": -1.0, "price": 2.44}, {"name": "Israel", "point": 1.0, "price": 1.6}]},
+        {"key": "alternate_totals", "outcomes": [
+            {"name": "Over", "point": 2.25, "price": 1.67}, {"name": "Under", "point": 2.25, "price": 2.28},
+            {"name": "Over", "point": 3.0, "price": 2.57}, {"name": "Under", "point": 3.0, "price": 1.54}]},
+    ]}
+    p = flat_prices(bm, "Kosovo", "Israel")
+    assert set(p) == {"ah_home@0", "ah_away@0", "ah_home@-1", "ah_away@1", "over@3", "under@3"}
+
+
+def test_each_line_tracked_separately_and_dc_real_vs_derived():
     s = Store(":memory:")
     ev = {"id": "a", "sport_key": "soccer_epl", "sport_title": "EPL", "home": "K", "away": "I",
           "commence_time": iso(utc_now() + timedelta(days=1))}
     s.save_prices(ev, "2026-11-14T08:00:00Z", {"home": (2.0, None), "draw": (3.4, None), "away": (3.8, None),
                                                "1X": (1.3, None), "12": (1.33, None), "X2": (1.8, None),
-                                               "over": (1.90, 2.5), "under": (1.98, 2.5)})
+                                               "over@2.5": (1.90, 2.5), "under@2.5": (1.98, 2.5),
+                                               "over@3": (2.6, 3.0), "under@3": (1.5, 3.0)})
     s.save_prices(ev, "2026-11-14T11:00:00Z", {"home": (1.9, None), "draw": (3.5, None), "away": (4.0, None),
-                                               "over": (1.80, 2.5), "under": (2.05, 2.5)})
-    s.save_prices(ev, "2026-11-14T14:00:00Z", {"home": (1.9, None), "draw": (3.5, None), "away": (4.0, None),
-                                               "over": (2.02, 2.75), "under": (1.86, 2.75)})
-    by = {o["code"]: o for o in movements(s)[0]["outcomes"]}
-    # Линия тотала сдвинулась 2.5 -> 2.75: сравниваем только цены 2.75, а сдвиг виден по open_point
-    assert by["over"]["point"] == 2.75 and by["over"]["open_point"] == 2.5 and by["over"]["change_pct"] == 0
+                                               "over@2.5": (1.80, 2.5), "under@2.5": (2.05, 2.5),
+                                               "over@3": (2.5, 3.0), "under@3": (1.55, 3.0)})
+    mv = movements(s)[0]
+    by = {o["code"]: o for o in mv["outcomes"]}
+    assert by["over@2.5"]["label"] == "ТБ 2.5" and by["over@2.5"]["change_pct"] == -5.26
+    assert by["over@3"]["opening"] == 2.6 and by["over@3"]["current"] == 2.5
+    assert by["over@2.5"]["main"] and not by["over@3"]["main"]  # 1.80/2.05 ближе, чем 2.5/1.55
     # ДШ: открытие реальное, текущее — расчёт из последнего 1X2
     assert by["1X"]["opening"] == 1.3 and by["1X"]["derived"] is True
     assert by["home"]["change_pct"] == -5.0
+    assert [o["code"] for o in mv["outcomes"]][:3] == ["home", "draw", "away"]
+
+
+def test_early_v2_state_main_line_codes_are_upgraded():
+    s = Store(":memory:")
+    s.load({"version": 2, "events": [{"id": "a", "sport_key": "soccer_epl", "sport_title": "EPL", "home": "K",
+            "away": "I", "commence_time": "2099-01-01T00:00:00Z",
+            "snapshots": [["2026-11-14T08:00:00Z", {"home": [2.0], "over": [1.9, 2.5], "ah_home": [1.98, -0.75]}]]}]})
+    assert set(s.history("a")[0]["p"]) == {"home", "over@2.5"}
 
 
 class FlowClient:
@@ -109,7 +134,7 @@ def test_new_match_gets_full_opening_snapshot_as_soon_as_pinnacle_lists_it():
     res = p.run_cycle(now=later + timedelta(minutes=15))
     assert res["opened"] == 1 and res["changed"]
     snap = s.history("new")[0]["p"]
-    assert snap["X2"] == [2.15, None] and snap["over"] == [1.95, 2.5] and s.event("new")["opened_at"]
+    assert snap["X2"] == [2.15, None] and snap["over@2.5"] == [1.95, 2.5] and s.event("new")["opened_at"]
 
     # Дальше матч уже известен — повторных запросов по нему нет
     c.calls.clear()
@@ -142,3 +167,14 @@ def test_quota_guard_stops_paid_event_calls():
     res = p.run_cycle(now=utc_now() + timedelta(minutes=15))
     assert [x for x in c.calls if x[0] == "event"] == []
     assert any("квота" in e for e in res["errors"])
+
+
+def test_lines_fetched_per_match_only_within_window():
+    c, s = FlowClient(), Store(":memory:")
+    p = _poller(c, s)
+    c.league = [_raw("soon", utc_now() + timedelta(hours=5), _bm(total=None, spread=None)),
+                _raw("later", utc_now() + timedelta(days=3), _bm(total=None, spread=None))]
+    c.per_event["soon"] = {**_raw("soon", utc_now() + timedelta(hours=5)), "bookmakers": [_bm(h2h=(0, 0, 0))]}
+    p.poll_once()
+    assert [x[1] for x in c.calls if x[0] == "event"] == ["soon"]
+    assert "over@2.5" in s.history("soon")[0]["p"] and "over@2.5" not in s.history("later")[0]["p"]

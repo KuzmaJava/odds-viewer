@@ -55,6 +55,10 @@
   tr.details > td { background: var(--bg); text-align: left; padding: 10px 14px; }
   .hist { width: auto; min-width: 520px; }
   .hist td, .hist th { padding: 4px 10px; font-size: 12px; }
+  .detailsGrid { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+  .hist.lines { min-width: 0; }
+  .hist.lines td.odd { min-width: 90px; }
+  tr.mainline td:first-child { box-shadow: inset 3px 0 var(--accent); }
   .pct { font-weight: 700; }
   .empty { padding: 30px; text-align: center; color: var(--muted); }
   .leagues { columns: 3 260px; background: var(--panel); border: 1px solid var(--line); padding: 12px; border-radius: 8px; }
@@ -83,9 +87,9 @@
     <div class="toolbar">
       <label><input type="checkbox" id="startedMoves"> показывать начавшиеся</label>
       <button id="csvMoves" title="Скачать текущий список матчей в CSV">Скачать CSV</button>
-      <span class="muted">Значение — текущий коэффициент; под ним — открытие и изменение. Для тотала и форы сверху линия
-        (синим — если линия сдвинулась, тогда сравнение по текущей линии). Реальный двойной шанс снимается при появлении матча и за час до старта,
-        между ними — курсивом расчёт из 1X2. Клик по матчу — история.</span>
+      <span class="muted">Значение — текущий коэффициент; под ним — открытие и изменение. Тотал и фора — основная линия
+        (коэффициенты ближе всего друг к другу); все линии без четвертных — по клику на матч. Реальный двойной шанс снимается при появлении
+        матча и за час до старта, между ними — курсивом расчёт из 1X2.</span>
     </div>
     <div class="scroll"><table>
       <thead id="moveHead"></thead>
@@ -174,16 +178,18 @@ const COLS = [
   ["it2_over", "ИТ2Б", "team_total"], ["it2_under", "ИТ2М", "team_total"],
 ];
 const MARKET_NAMES = { "1x2": "1X2", dc: "Двойной шанс", total: "Тотал", spread: "Фора", team_total: "Инд. тотал" };
-const HANDICAP = new Set(["ah_home", "ah_away"]);
-const fmtPt = (code, pt) => (pt == null ? "" : HANDICAP.has(code) && pt > 0 ? "+" + pt : String(pt).replace("-", "−"));
-const outcomeName = (o) => o.point != null ? `${o.label} ${fmtPt(o.code, o.point)}` : o.label;
+const baseOf = (code) => code.split("@")[0];
+const fmtPt = (base, pt) => (pt == null ? "" : base.startsWith("ah_") && pt > 0 ? "+" + pt : String(pt).replace("-", "−"));
 
 // Колонки, по которым есть данные хотя бы у одного матча (инд. тоталы Pinnacle на футбол обычно не даёт)
 function visibleCols(events) {
-  const have = new Set(events.flatMap((e) => e.outcomes.map((o) => o.code)));
-  const base = new Set(["home", "draw", "away", "1X", "12", "X2"]);
-  return COLS.filter(([code]) => base.has(code) || have.has(code));
+  const have = new Set(events.flatMap((e) => e.outcomes.map((o) => o.base)));
+  const always = new Set(["home", "draw", "away", "1X", "12", "X2"]);
+  return COLS.filter(([code]) => always.has(code) || have.has(code));
 }
+
+// В таблице «Матчи» по каждому рынку — основная линия
+const mainByBase = (ev) => Object.fromEntries(ev.outcomes.filter((o) => o.main).map((o) => [o.base, o]));
 
 // ---------- источник данных ----------
 // Статический режим (GitHub Pages): рядом со страницей лежит data.json, собранный GitHub Actions.
@@ -257,15 +263,42 @@ async function loadStatus() {
 }
 
 // ---------- матчи ----------
-function oddCell(o, first) {
+function oddCell(o, first, withLine = true) {
   if (!o) return `<td class="odd num muted ${first ? "grp" : ""}">—</td>`;
   const ch = o.change_pct;
   const dir = ch == null || ch === 0 ? "" : ch < 0 ? "down" : "up";
   const bg = ch != null && Math.abs(ch) >= 3 ? ` ${dir}-bg` : "";
   const delta = ch ? `<div class="delta ${dir}">${fmt(o.opening)} · ${fmtPct(ch)}</div>` : `<div class="delta muted">без изменений</div>`;
-  return `<td class="odd num ${first ? "grp" : ""}${bg} ${o.derived ? "derived" : ""}" title="${esc(outcomeName(o))}: открытие ${fmt(o.opening)} (${fmtDT(o.open_ts)}) → сейчас ${fmt(o.current)} (${fmtDT(o.cur_ts)})${o.derived ? " · двойной шанс частично рассчитан из 1X2" : ""}">
-    ${o.point != null ? `<div class="pt ${o.open_point !== o.point ? "moved" : ""}">${o.open_point !== o.point ? fmtPt(o.code, o.open_point) + " → " : ""}${fmtPt(o.code, o.point)}</div>` : ""}
+  return `<td class="odd num ${first ? "grp" : ""}${bg} ${o.derived ? "derived" : ""}" title="${esc(o.label)}: открытие ${fmt(o.opening)} (${fmtDT(o.open_ts)}) → сейчас ${fmt(o.current)} (${fmtDT(o.cur_ts)}), снимков ${o.n}${o.derived ? " · двойной шанс частично рассчитан из 1X2" : ""}">
+    ${withLine && o.point != null ? `<div class="pt">${fmtPt(o.base, o.point)}</div>` : ""}
     <div class="cur">${fmt(o.current)}</div>${delta}</td>`;
+}
+
+// Все линии рынка: строка на линию, пара исходов (ТБ/ТМ или Ф1/Ф2 с противоположной форой)
+function linesTable(ev, a, b, title, sign) {
+  const by = Object.fromEntries(ev.outcomes.map((o) => [o.code, o]));
+  const lines = ev.outcomes.filter((o) => o.base === a || (o.base === b && !by[`${a}@${sign * o.point + 0}`]))
+    .map((o) => (o.base === a ? o.point : sign * o.point + 0));
+  if (!lines.length) return "";
+  const [la, lb] = [COLS.find((c) => c[0] === a)[1], COLS.find((c) => c[0] === b)[1]];
+  return `<table class="hist lines"><thead><tr><th>${title}</th><th>${la}</th><th>${lb}</th></tr></thead><tbody>
+    ${[...new Set(lines)].sort((x, y) => x - y).map((pt) => {
+      const oa = by[`${a}@${pt}`], ob = by[`${b}@${sign * pt + 0}`];
+      const main = (oa && oa.main) || (ob && ob.main);
+      return `<tr class="${main ? "mainline" : ""}"><td class="num"><b>${fmtPt(a, pt)}</b>${sign < 0 ? ` / ${fmtPt(b, sign * pt + 0)}` : ""}</td>
+        ${oddCell(oa, false, false)}${oddCell(ob, false, false)}</tr>`;
+    }).join("")}</tbody></table>`;
+}
+
+function detailsHtml(ev) {
+  const lines = [
+    linesTable(ev, "over", "under", "Тотал", 1),
+    linesTable(ev, "ah_home", "ah_away", "Фора П1 / П2", -1),
+    linesTable(ev, "it1_over", "it1_under", "ИТ1", 1),
+    linesTable(ev, "it2_over", "it2_under", "ИТ2", 1),
+  ].filter(Boolean);
+  return `<div class="detailsGrid">${lines.join("") || `<span class="muted">Линий тоталов и фор пока нет: они снимаются при появлении матча и за сутки до старта.</span>`}</div>
+    <div class="muted" style="margin:10px 0 4px">История 1X2 и двойного шанса</div>${historyTable(ev.id)}`;
 }
 
 function historyTable(id) {
@@ -273,18 +306,17 @@ function historyTable(id) {
   if (!h) return `<span class="muted">Загрузка…</span>`;
   if (h.error) return `<span class="muted">Ошибка: ${esc(h.error)}</span>`;
   const dc = (p, a, b) => (p[a] && p[b] ? [1 / (1 / p[a][0] + 1 / p[b][0]), null, true] : null);
-  const rows = h.map((r) => {
+  const rows = h.filter((r) => r.p.home || r.p["1X"]).map((r) => {
     const p = { ...r.p };
     if (!p["1X"]) { p["1X"] = dc(p, "home", "draw"); p["12"] = dc(p, "home", "away"); p["X2"] = dc(p, "draw", "away"); }
     return { ts: r.ts, p };
   });
-  const cols = COLS.filter(([code]) => rows.some((r) => r.p[code]));
+  const cols = COLS.slice(0, 6).filter(([code]) => rows.some((r) => r.p[code]));
   return `<table class="hist"><thead><tr><th>Снимок</th>${cols.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead><tbody>
     ${rows.map((r) => `<tr><td>${fmtDT(r.ts)}</td>${cols.map(([code]) => {
       const v = r.p[code];
       if (!v) return `<td class="muted">—</td>`;
-      const pt = v[1] != null ? ` <span class="muted">${fmtPt(code, v[1])}</span>` : "";
-      return `<td class="num ${v[2] ? "derived" : ""}">${fmt(v[0])}${pt}</td>`;
+      return `<td class="num ${v[2] ? "derived" : ""}">${fmt(v[0])}</td>`;
     }).join("")}</tr>`).join("")}</tbody></table>`;
 }
 
@@ -298,7 +330,7 @@ function renderMoves() {
     return;
   }
   $("moveRows").innerHTML = state.events.map((ev) => {
-    const by = Object.fromEntries(ev.outcomes.map((o) => [o.code, o]));
+    const by = mainByBase(ev);
     return `
     <tr class="ev" data-id="${esc(ev.id)}">
       <td class="muted">${fmtDT(ev.commence_time)}</td>
@@ -306,7 +338,7 @@ function renderMoves() {
       <td class="muted">${ev.snapshots}<div>с ${fmtDT(ev.first_ts)}</div></td>
       ${cols.map(([code, , m], i) => oddCell(by[code], i === 0 || cols[i - 1][2] !== m)).join("")}
     </tr>
-    ${state.open.has(ev.id) ? `<tr class="details"><td colspan="${span}">${historyTable(ev.id)}</td></tr>` : ""}`;
+    ${state.open.has(ev.id) ? `<tr class="details"><td colspan="${span}">${detailsHtml(ev)}</td></tr>` : ""}`;
   }).join("");
 }
 
@@ -329,19 +361,18 @@ function downloadMovesCsv() {
     const d = new Date(iso), p = (n) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   };
-  const cols = visibleCols(state.events);
-  const withLine = (m) => m === "total" || m === "spread" || m === "team_total";
+  // Колонки — все исходы всех матчей (каждая линия тотала и форы отдельно), в порядке рынков
+  const order = Object.fromEntries(COLS.map(([c], i) => [c, i]));
+  const codes = new Map();
+  state.events.forEach((ev) => ev.outcomes.forEach((o) => codes.set(o.code, o)));
+  const cols = [...codes.values()].sort((a, b) => order[a.base] - order[b.base] || (a.point ?? 0) - (b.point ?? 0));
   const header = ["Начало", "Лига", "Хозяева", "Гости", "Снимков", "Первый снимок", "Последний снимок",
-    ...cols.flatMap(([, l, m]) => [...(withLine(m) ? [`${l} линия открытия`, `${l} линия`] : []),
-      `${l} открытие`, `${l} сейчас`, `${l} изменение %`])];
+    ...cols.flatMap((c) => [`${c.label} открытие`, `${c.label} сейчас`, `${c.label} изменение %`])];
   const rows = state.events.map((ev) => {
     const by = Object.fromEntries(ev.outcomes.map((o) => [o.code, o]));
     return [
       localDT(ev.commence_time), ev.sport_title, ev.home, ev.away, ev.snapshots, localDT(ev.first_ts), localDT(ev.last_ts),
-      ...cols.flatMap(([code, , m]) => {
-        const o = by[code] || {};
-        return [...(withLine(m) ? [o.open_point, o.point] : []), o.opening, o.current, o.change_pct];
-      }),
+      ...cols.flatMap((c) => { const o = by[c.code] || {}; return [o.opening, o.current, o.change_pct]; }),
     ];
   });
   // BOM — чтобы Excel правильно открыл кириллицу
@@ -380,8 +411,8 @@ async function loadMoveList(kind) {
   $(c.rows).innerHTML = rows.length ? rows.map((r) => `
     <tr>
       <td class="pct ${c.cls} num">${fmtPct(r.change_pct)}</td>
-      <td class="${r.derived ? "derived" : ""}" title="${MARKET_NAMES[r.market] || ""}${r.derived ? " · частично рассчитан из 1X2" : ""}"><b>${esc(outcomeName(r))}</b>${
-        r.point != null && r.open_point !== r.point ? `<div class="muted">линия была ${fmtPt(r.code, r.open_point)}</div>` : ""}</td>
+      <td class="${r.derived ? "derived" : ""}" title="${MARKET_NAMES[r.market] || ""}${r.derived ? " · частично рассчитан из 1X2" : ""}"><b>${esc(r.label)}</b>${
+        r.point != null && !r.main ? `<div class="muted">не основная линия</div>` : ""}</td>
       <td class="left"><b>${esc(r.home)} — ${esc(r.away)}</b><div class="muted">${esc(r.sport_title)}</div></td>
       <td class="muted">${fmtDT(r.commence_time)}</td>
       <td class="num grp">${fmt(r.opening)}</td>
@@ -396,12 +427,13 @@ const loadRises = () => loadMoveList("rises");
 // ---------- лиги ----------
 function updateEstimate() {
   const n = document.querySelectorAll("#leagueList input:checked").length;
-  const p = state.status?.policy || { base_hours: 3, near_hours: 1, league_markets: "h2h,totals,spreads" };
-  const k = (p.league_markets || "h2h").split(",").length;          // рынков в плановом опросе
+  const p = state.status?.policy || { base_hours: 3, near_hours: 1, league_markets: "h2h", lines_window_hours: 24 };
+  const k = (p.league_markets || "h2h").split(",").length;          // рынков в плановом опросе лиги
   const polls = Math.round((24 / p.base_hours) * 30 * 1.3);          // ≈ опросов лиги в месяц (с учётом «часто перед матчем»)
   $("estimate").textContent =
-    `Выбрано лиг: ${n} → плановые опросы ≈ ${n * polls * k} запр./мес (${k} рынка за опрос) ` +
-    `+ ≈ 7 на каждый новый матч (открытие и закрытие с реальным двойным шансом). Бесплатный план — 500/мес.`;
+    `Выбрано лиг: ${n} → опросы лиг ≈ ${n * polls * k} запр./мес + ≈ 30 на каждый матч ` +
+    `(все линии тоталов и фор: при появлении, в последние ${p.lines_window_hours ?? 24} ч и на закрытии). ` +
+    `Для лиги с ~40 матчами в месяц ≈ ${polls * k + 40 * 30}. Бесплатный план — 500/мес.`;
 }
 
 async function loadLeagues() {
@@ -527,7 +559,7 @@ $("pollNow").addEventListener("click", async () => {
           window.open(`https://github.com/${STATIC.repo}/actions/workflows/poll.yml`, "_blank", "noopener");
           return;
         }
-        if (!confirm("Опросить все лиги сейчас? Это 3 запроса квоты на каждую лигу (1X2, тотал, фора).")) return;
+        if (!confirm("Опросить все лиги сейчас? Это 1 запрос квоты на лигу и 2 на каждый матч в ближайшие сутки (все линии).")) return;
         btn.disabled = true;
         try {
           await dispatchWorkflow({ force: true });

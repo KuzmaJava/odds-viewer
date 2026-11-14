@@ -20,6 +20,7 @@ def status_dict(poller: Poller, demo: bool) -> Dict[str, Any]:
             "near_window_hours": poller.near_window.total_seconds() / 3600,
             "league_markets": poller.league_markets,
             "close_window_min": poller.close_window.total_seconds() / 60,
+            "lines_window_hours": poller.lines_window.total_seconds() / 3600,
         },
         "schedule": schedule,
         "last_poll_at": poller.last_poll_at,

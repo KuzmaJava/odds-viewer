@@ -4,11 +4,12 @@
 - Если в лиге есть матч, который начнётся в ближайшие `near_window_hours` (8 ч),
   лига опрашивается раз в `near_hours` (1 ч) — до начала этого матча.
 
-Плановый опрос: один запрос /odds на лигу (1X2 + тотал + фора, стоимость = число вернувшихся рынков).
+Плановый опрос: один запрос /odds на лигу (1X2, 1 запрос квоты); для матчей в ближайшие 24 ч —
+ещё все линии тоталов и фор запросом по матчу (2 запроса на матч).
 Кроме того, каждый цикл (15 мин):
 - бесплатно проверяется список матчей; новый матч сразу снимается полным набором рынков
-  (1X2, реальный двойной шанс, тотал, фора, инд. тоталы) — это открытие линии;
-- за час до старта снимается реальный двойной шанс — линия закрытия.
+  (1X2, реальный двойной шанс, все линии тоталов и фор, инд. тоталы) — это открытие линии;
+- за час до старта — то же самое ещё раз: линия закрытия.
 """
 import asyncio
 import logging
@@ -40,9 +41,11 @@ def parse_iso(s: str) -> datetime:
 class Poller:
     def __init__(self, client: OddsClient, store: Store, default_sports: List[str], min_quota: int = 10,
                  base_hours: float = 3, near_hours: float = 1, near_window_hours: float = 8,
-                 league_markets: str = "h2h,totals,spreads",
-                 open_markets: str = "h2h,double_chance,totals,spreads,team_totals",
-                 close_markets: str = "h2h,double_chance,team_totals",
+                 league_markets: str = "h2h",
+                 open_markets: str = "h2h,double_chance,alternate_totals,alternate_spreads,team_totals",
+                 lines_markets: str = "alternate_totals,alternate_spreads",
+                 close_markets: str = "h2h,double_chance,alternate_totals,alternate_spreads,team_totals",
+                 lines_window_hours: float = 24,
                  close_window_min: float = 60, cycle_seconds: int = 900):
         self.client = client
         self.store = store
@@ -54,6 +57,8 @@ class Poller:
         self.league_markets = league_markets
         self.open_markets = open_markets
         self.close_markets = close_markets
+        self.lines_markets = lines_markets
+        self.lines_window = timedelta(hours=lines_window_hours)
         self.close_window = timedelta(minutes=close_window_min)
         self.cycle_seconds = cycle_seconds
         self.last_error: Optional[str] = None
@@ -199,6 +204,15 @@ class Poller:
                 if new:
                     self.store.mark(raw["id"], "opened_at", ts)
                 saved += 1
+                # Все линии тоталов и фор — запросом по матчу (2 запроса), только для матчей в ближайшие сутки
+                if parse_iso(raw["commence_time"]) - now <= self.lines_window and not self._quota_low():
+                    try:
+                        data = self.client.event_odds(sport, raw["id"], markets=self.lines_markets, bookmakers=BOOKMAKER)
+                        lines = self._pinnacle({**raw, **(data or {})}) if data else {}
+                        if lines:
+                            self.store.save_prices(self._meta(raw), ts, lines)
+                    except Exception as e:  # noqa: BLE001
+                        errors.append(f"{sport} {raw['home_team']} — {raw['away_team']} (линии): {e}")
             self.store.set_setting(f"last_poll_at:{sport}", ts)
             polled.append(sport)
         if polled:
@@ -232,7 +246,7 @@ class Poller:
         return result
 
     def poll_once(self, sports: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Плановый опрос лиг (по умолчанию — всех отслеживаемых): 1X2, тотал и фора одним запросом на лигу."""
+        """Плановый опрос лиг (по умолчанию — всех отслеживаемых): 1X2 по лиге + линии для ближайших матчей."""
         with self._lock:
             now = utc_now()
             ts = iso(now)

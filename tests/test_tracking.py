@@ -29,6 +29,9 @@ class FakeClient:
     def events(self, sport):
         return []
 
+    def event_odds(self, sport, event_id, markets, bookmakers):
+        return {}
+
 
 def _poller(client, store):
     return Poller(client, store, default_sports=["soccer_epl"], min_quota=10,
@@ -50,7 +53,7 @@ def test_poll_saves_only_upcoming_pinnacle_h2h():
     result = _poller(client, store).poll_once()
 
     assert result["snapshots_saved"] == 1
-    assert client.calls == [("soccer_epl", "h2h,totals,spreads", "pinnacle", False)]
+    assert client.calls == [("soccer_epl", "h2h", "pinnacle", False)]
     assert store.history("a")[0]["p"]["home"] == [2.0, None]
     assert store.history("live") == []
     assert store.get_setting("last_poll_at") == result["at"]
