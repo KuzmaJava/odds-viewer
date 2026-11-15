@@ -9,12 +9,14 @@
     --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #6b7385; --line: #e3e6ec;
     --accent: #2f6fde; --drop: #c4352b; --drop-bg: #fdecea; --rise: #1f8a4c; --rise-bg: #e6f6ec;
     --warn-bg: #fff4d6; --row-hover: #f1f4fa;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #12151b; --panel: #1a1e26; --text: #e3e7ef; --muted: #8b93a7; --line: #2a303c;
       --accent: #6c9cf0; --drop: #ff7b70; --drop-bg: #3a1d1b; --rise: #4fd18b; --rise-bg: #173226;
       --warn-bg: #3a3214; --row-hover: #212633;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767;
     }
   }
   * { box-sizing: border-box; }
@@ -55,7 +57,21 @@
   tr.details > td { background: var(--bg); text-align: left; padding: 10px 14px; }
   .hist { width: auto; min-width: 520px; }
   .hist td, .hist th { padding: 4px 10px; font-size: 12px; }
-  .histBtn { padding: 3px 10px; font-size: 12px; }
+  .histBtn, .chip { padding: 3px 10px; font-size: 12px; }
+  .chartBox { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 12px; max-width: 980px; position: relative; }
+  .chipRow { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-bottom: 6px; }
+  .chipRow .grpName { color: var(--muted); font-size: 12px; margin: 0 2px 0 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; }
+  .chip .sw { width: 10px; height: 10px; border-radius: 3px; background: transparent; border: 1px solid var(--line); }
+  .chip.on { border-color: var(--text); font-weight: 600; }
+  .chip.on .sw { border: none; }
+  .chartSvg { width: 100%; height: auto; display: block; }
+  .chartSvg text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+  .chartSvg .grid { stroke: var(--line); stroke-width: 1; }
+  .chartSvg .lbl { font-size: 11px; font-weight: 600; fill: var(--text); }
+  .chartTip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.15); white-space: nowrap; z-index: 3; }
+  .chartTip .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
   .histBtn.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
   .detailsGrid { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
   .hist.lines { min-width: 0; }
@@ -157,7 +173,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { status: null, events: [], open: new Set(), history: {}, histMarket: {}, tab: "moves" };
+const state = { status: null, events: [], open: new Set(), history: {}, histMarket: {}, chartSel: {}, chartPct: {}, tab: "moves" };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmt = (v) => (v == null ? "—" : Number(v).toFixed(2));
@@ -300,7 +316,133 @@ function detailsHtml(ev) {
     linesTable(ev, "it2_over", "it2_under", "ИТ2", 1),
   ].filter(Boolean);
   return `<div class="detailsGrid">${lines.join("") || `<span class="muted">Линий тоталов и фор пока нет: они снимаются при появлении матча и за сутки до старта.</span>`}</div>
+    ${chartSection(ev)}
     ${historySection(ev.id)}`;
+}
+
+// ---------- график движения ----------
+// Серии выбираются чипами; цвет закрепляется за исходом при выборе (не перекрашивается), максимум 8 серий.
+const MAX_SERIES = 8;
+const chartData = {};   // id -> {xs, series, sx, sy, pct}
+
+function seriesPoints(h, code) {
+  // [ts(ms), price, derived] по снимкам; двойной шанс без реального значения считаем из 1X2 того же снимка
+  const dcPair = { "1X": ["home", "draw"], "12": ["home", "away"], "X2": ["draw", "away"] };
+  return h.map((r) => {
+    let v = r.p[code], derived = false;
+    if (!v && dcPair[code]) {
+      const [a, b] = dcPair[code];
+      if (r.p[a] && r.p[b]) { v = [1 / (1 / r.p[a][0] + 1 / r.p[b][0])]; derived = true; }
+    }
+    return v ? [Date.parse(r.ts), v[0], derived] : null;
+  }).filter(Boolean);
+}
+
+function chartSel(id) {
+  if (!state.chartSel[id]) state.chartSel[id] = new Map([["home", 1], ["draw", 2], ["away", 3]]);
+  return state.chartSel[id];
+}
+
+function chartSection(ev) {
+  const h = state.history[ev.id];
+  if (!Array.isArray(h)) return "";
+  const sel = chartSel(ev.id);
+  const pct = !!state.chartPct[ev.id];
+  const groups = [["1X2", (o) => o.market === "1x2"], ["ДШ", (o) => o.market === "dc"], ["Тотал", (o) => o.market === "total"],
+    ["Фора", (o) => o.market === "spread"], ["ИТ", (o) => o.market === "team_total"]];
+  const chips = groups.map(([name, f]) => {
+    const items = ev.outcomes.filter(f);
+    if (!items.length) return "";
+    return `<span class="grpName">${name}</span>` + items.map((o) => {
+      const slot = sel.get(o.code);
+      return `<button class="chip ${slot ? "on" : ""}" data-id="${esc(ev.id)}" data-code="${esc(o.code)}" ${!slot && sel.size >= MAX_SERIES ? "disabled title=\"Не больше 8 линий на графике\"" : ""}>
+        <span class="sw" style="${slot ? `background:var(--s${slot})` : ""}"></span>${esc(o.label)}</button>`;
+    }).join("");
+  }).join("");
+  return `<div class="chartBox" data-id="${esc(ev.id)}">
+    <div class="chipRow"><b style="font-size:13px">График</b>
+      <label style="margin-left:10px"><input type="checkbox" class="pctToggle" data-id="${esc(ev.id)}" ${pct ? "checked" : ""}> в % от открытия</label>
+      ${sel.size ? `<button class="chip clearSel" data-id="${esc(ev.id)}">очистить</button>` : ""}</div>
+    <div class="chipRow">${chips}</div>
+    ${chartSvg(ev, h, sel, pct)}
+  </div>`;
+}
+
+function chartSvg(ev, h, sel, pct) {
+  const labelOf = Object.fromEntries(ev.outcomes.map((o) => [o.code, o.label]));
+  const series = [...sel].map(([code, slot]) => {
+    let pts = seriesPoints(h, code);
+    if (pct && pts.length) { const o = pts[0][1]; pts = pts.map(([t, v, d]) => [t, (v - o) / o * 100, d]); }
+    return { code, slot, label: labelOf[code] || code, pts };
+  }).filter((s) => s.pts.length);
+  if (!series.length) return `<div class="muted" style="padding:20px 0">Выберите исходы выше — П1, X, ТМ 2.5 и т.д.</div>`;
+  const W = 900, H = 280, L = 48, R = 70, T = 12, B = 26;
+  const xs = [...new Set(series.flatMap((s) => s.pts.map((p) => p[0])))].sort((a, b) => a - b);
+  const vals = series.flatMap((s) => s.pts.map((p) => p[1]));
+  let lo = Math.min(...vals, pct ? 0 : Infinity), hi = Math.max(...vals, pct ? 0 : -Infinity);
+  if (hi - lo < (pct ? 2 : 0.1)) { const m = (hi + lo) / 2, d = pct ? 1 : 0.05; lo = m - d; hi = m + d; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const x0 = xs[0], x1 = xs[xs.length - 1] === x0 ? x0 + 3600e3 : xs[xs.length - 1];
+  const sx = (t) => L + (t - x0) / (x1 - x0) * (W - L - R);
+  const sy = (v) => T + (hi - v) / (hi - lo) * (H - T - B);
+  // оси: ~5 горизонтальных линий, подписи времени у краёв и в середине
+  const step = niceStep((hi - lo) / 5);
+  const yt = []; for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) yt.push(v);
+  const fy = (v) => pct ? (v > 0 ? "+" : "") + v.toFixed(step < 1 ? 1 : 0) + "%" : v.toFixed(step < 0.1 ? 2 : step < 1 ? 1 : 0);
+  const xt = xs.length <= 6 ? xs : [0, 0.25, 0.5, 0.75, 1].map((f) => xs[Math.round(f * (xs.length - 1))]);
+  chartData[ev.id] = { xs, series, sx, sy, pct, W, L, R };
+  const lines = series.map((s) => {
+    const d = s.pts.map((p, i) => `${i ? "L" : "M"}${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join("");
+    const dots = s.pts.map((p) => `<circle cx="${sx(p[0]).toFixed(1)}" cy="${sy(p[1]).toFixed(1)}" r="${p[2] ? 3 : 4}" fill="${p[2] ? "var(--panel)" : `var(--s${s.slot})`}" stroke="var(--s${s.slot})" stroke-width="2"/>`).join("");
+    return `<path d="${d}" fill="none" stroke="var(--s${s.slot})" stroke-width="2" stroke-linejoin="round"/>${dots}`;
+  }).join("");
+  // подписи у конца линий — только когда серий немного, с разводкой по вертикали
+  let ends = "";
+  if (series.length <= 4) {
+    const items = series.map((s) => ({ s, y: sy(s.pts[s.pts.length - 1][1]) })).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < items.length; i++) items[i].y = Math.max(items[i].y, items[i - 1].y + 13);
+    ends = items.map(({ s, y }) => `<text class="lbl" x="${W - R + 8}" y="${(y + 4).toFixed(1)}">${esc(s.label)}</text>`).join("");
+  }
+  return `<svg class="chartSvg" data-id="${esc(ev.id)}" viewBox="0 0 ${W} ${H}" role="img" aria-label="График коэффициентов">
+    ${yt.map((v) => `<line class="grid" x1="${L}" x2="${W - R}" y1="${sy(v).toFixed(1)}" y2="${sy(v).toFixed(1)}"/><text x="${L - 6}" y="${(sy(v) + 4).toFixed(1)}" text-anchor="end">${fy(v)}</text>`).join("")}
+    ${xt.map((t) => `<text x="${sx(t).toFixed(1)}" y="${H - 6}" text-anchor="middle">${fmtDT(new Date(t).toISOString())}</text>`).join("")}
+    ${lines}${ends}
+    <line class="cross" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--muted)" stroke-dasharray="3 3" visibility="hidden"/>
+    <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent" class="hit"/>
+  </svg><div class="chartTip" hidden></div>`;
+}
+
+function niceStep(raw) {
+  const p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+}
+
+// Наведение: вертикальная линия на ближайший снимок + подсказка со значениями всех выбранных серий
+function chartHover(e) {
+  const svg = e.target.closest(".chartSvg");
+  if (!svg) return;
+  const cd = chartData[svg.dataset.id], box = svg.parentElement, tip = box.querySelector(".chartTip");
+  const r = svg.getBoundingClientRect(), k = cd.W / r.width;
+  const x = (e.clientX - r.left) * k;
+  const t = cd.xs.reduce((best, v) => (Math.abs(cd.sx(v) - x) < Math.abs(cd.sx(best) - x) ? v : best), cd.xs[0]);
+  const cross = svg.querySelector(".cross");
+  cross.setAttribute("x1", cd.sx(t)); cross.setAttribute("x2", cd.sx(t)); cross.setAttribute("visibility", "visible");
+  const rows = cd.series.map((s) => {
+    const p = s.pts.find((q) => q[0] === t);
+    const v = p ? (cd.pct ? fmtPct(p[1]) : fmt(p[1])) + (p[2] ? " (расчёт)" : "") : "—";
+    return `<div><span class="sw" style="background:var(--s${s.slot})"></span>${esc(s.label)}: <b>${v}</b></div>`;
+  }).join("");
+  tip.innerHTML = `<div class="muted">${fmtDT(new Date(t).toISOString())}</div>${rows}`;
+  tip.hidden = false;
+  const bx = box.getBoundingClientRect(), px = e.clientX - bx.left;
+  tip.style.top = `${e.clientY - bx.top + 12}px`;
+  tip.style.left = `${Math.min(px + 14, bx.width - tip.offsetWidth - 8)}px`;
+}
+function chartLeave(e) {
+  const svg = e.target.closest(".chartSvg");
+  if (!svg) return;
+  svg.querySelector(".cross").setAttribute("visibility", "hidden");
+  svg.parentElement.querySelector(".chartTip").hidden = true;
 }
 
 function historySection(id) {
@@ -588,10 +730,27 @@ document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click
 $("moveRows").addEventListener("click", (e) => {
   const btn = e.target.closest(".histBtn");
   if (btn) { state.histMarket[btn.dataset.id] = btn.dataset.m; renderMoves(); return; }
+  const chip = e.target.closest(".chip");
+  if (chip) {
+    const sel = chartSel(chip.dataset.id);
+    if (chip.classList.contains("clearSel")) sel.clear();
+    else if (sel.has(chip.dataset.code)) sel.delete(chip.dataset.code);
+    else if (sel.size < MAX_SERIES) {
+      // свободный цвет с наименьшим номером — у уже выбранных линий цвет не меняется
+      const used = new Set(sel.values());
+      sel.set(chip.dataset.code, [1, 2, 3, 4, 5, 6, 7, 8].find((n) => !used.has(n)));
+    }
+    renderMoves();
+    return;
+  }
+  if (e.target.closest(".pctToggle")) { state.chartPct[e.target.dataset.id] = e.target.checked; renderMoves(); return; }
+  if (e.target.closest(".chartBox")) return;
   const tr = e.target.closest("tr.ev");
   if (tr) toggleHistory(tr.dataset.id);
 });
 $("startedMoves").addEventListener("change", loadMoves);
+$("moveRows").addEventListener("mousemove", chartHover);
+$("moveRows").addEventListener("mouseout", (e) => { if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest(".chartSvg")) chartLeave(e); });
 document.querySelectorAll(".marketSel").forEach((sel) => {
   sel.innerHTML = `<option value="">все</option>` + Object.entries(MARKET_NAMES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
 });
