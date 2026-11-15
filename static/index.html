@@ -55,6 +55,8 @@
   tr.details > td { background: var(--bg); text-align: left; padding: 10px 14px; }
   .hist { width: auto; min-width: 520px; }
   .hist td, .hist th { padding: 4px 10px; font-size: 12px; }
+  .histBtn { padding: 3px 10px; font-size: 12px; }
+  .histBtn.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
   .detailsGrid { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
   .hist.lines { min-width: 0; }
   .hist.lines td.odd { min-width: 90px; }
@@ -155,7 +157,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { status: null, events: [], open: new Set(), history: {}, tab: "moves" };
+const state = { status: null, events: [], open: new Set(), history: {}, histMarket: {}, tab: "moves" };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmt = (v) => (v == null ? "—" : Number(v).toFixed(2));
@@ -298,25 +300,79 @@ function detailsHtml(ev) {
     linesTable(ev, "it2_over", "it2_under", "ИТ2", 1),
   ].filter(Boolean);
   return `<div class="detailsGrid">${lines.join("") || `<span class="muted">Линий тоталов и фор пока нет: они снимаются при появлении матча и за сутки до старта.</span>`}</div>
-    <div class="muted" style="margin:10px 0 4px">История 1X2 и двойного шанса</div>${historyTable(ev.id)}`;
+    ${historySection(ev.id)}`;
 }
 
-function historyTable(id) {
+function historySection(id) {
+  const h = state.history[id];
+  const avail = Array.isArray(h) ? histMarketsAvailable(h) : [HIST_MARKETS[0]];
+  let m = state.histMarket[id] || "1x2";
+  if (!avail.some(([k]) => k === m)) m = "1x2";
+  return `<div class="toolbar" style="margin:12px 0 6px"><span class="muted">История снимков:</span>
+      ${avail.map(([k, title]) => `<button class="histBtn ${k === m ? "on" : ""}" data-id="${esc(id)}" data-m="${k}">${title}</button>`).join("")}
+      <span class="muted">цвет — изменение к предыдущему снимку</span></div>
+    <div class="scroll">${historyTable(id, m)}</div>`;
+}
+
+// История снимков по рынку: 1X2 и ДШ — колонка на исход; тоталы/форы/ИТ — колонка на линию, в ячейке пара исходов
+const HIST_MARKETS = [
+  ["1x2", "1X2 и ДШ"],
+  ["total", "Тоталы", "over", "under", 1],
+  ["spread", "Форы", "ah_home", "ah_away", -1],
+  ["it1", "ИТ1", "it1_over", "it1_under", 1],
+  ["it2", "ИТ2", "it2_over", "it2_under", 1],
+];
+const lineOf = (code) => { const [b, pt] = code.split("@"); return [b, pt == null ? null : Number(pt)]; };
+
+function histMarketsAvailable(h) {
+  const bases = new Set(h.flatMap((r) => Object.keys(r.p).map((c) => lineOf(c)[0])));
+  return HIST_MARKETS.filter(([m, , a]) => m === "1x2" || bases.has(a));
+}
+
+// Значение с подсветкой изменения относительно предыдущего снимка
+function histVal(v, prev, derived) {
+  if (v == null) return `<span class="muted">—</span>`;
+  const dir = prev == null || prev === v ? "" : v < prev ? "down" : "up";
+  return `<span class="${dir} ${derived ? "derived" : ""}">${fmt(v)}</span>`;
+}
+
+function historyTable(id, market = "1x2") {
   const h = state.history[id];
   if (!h) return `<span class="muted">Загрузка…</span>`;
   if (h.error) return `<span class="muted">Ошибка: ${esc(h.error)}</span>`;
-  const dc = (p, a, b) => (p[a] && p[b] ? [1 / (1 / p[a][0] + 1 / p[b][0]), null, true] : null);
-  const rows = h.filter((r) => r.p.home || r.p["1X"]).map((r) => {
-    const p = { ...r.p };
-    if (!p["1X"]) { p["1X"] = dc(p, "home", "draw"); p["12"] = dc(p, "home", "away"); p["X2"] = dc(p, "draw", "away"); }
-    return { ts: r.ts, p };
-  });
-  const cols = COLS.slice(0, 6).filter(([code]) => rows.some((r) => r.p[code]));
-  return `<table class="hist"><thead><tr><th>Снимок</th>${cols.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead><tbody>
-    ${rows.map((r) => `<tr><td>${fmtDT(r.ts)}</td>${cols.map(([code]) => {
-      const v = r.p[code];
-      if (!v) return `<td class="muted">—</td>`;
-      return `<td class="num ${v[2] ? "derived" : ""}">${fmt(v[0])}</td>`;
+  if (market === "1x2") {
+    const dc = (p, a, b) => (p[a] && p[b] ? [1 / (1 / p[a][0] + 1 / p[b][0]), null, true] : null);
+    const rows = h.filter((r) => r.p.home || r.p["1X"]).map((r) => {
+      const p = { ...r.p };
+      if (!p["1X"]) { p["1X"] = dc(p, "home", "draw"); p["12"] = dc(p, "home", "away"); p["X2"] = dc(p, "draw", "away"); }
+      return { ts: r.ts, p };
+    });
+    const cols = COLS.slice(0, 6).filter(([code]) => rows.some((r) => r.p[code]));
+    return `<table class="hist"><thead><tr><th>Снимок</th>${cols.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead><tbody>
+      ${rows.map((r, i) => `<tr><td>${fmtDT(r.ts)}</td>${cols.map(([code]) => {
+        const v = r.p[code], pv = i ? rows[i - 1].p[code] : null;
+        return `<td class="num">${histVal(v && v[0], pv && pv[0], v && v[2])}</td>`;
+      }).join("")}</tr>`).join("")}</tbody></table>`;
+  }
+  const [, , a, b, sign] = HIST_MARKETS.find((m) => m[0] === market);
+  const pts = new Set();
+  h.forEach((r) => Object.keys(r.p).forEach((c) => {
+    const [base, pt] = lineOf(c);
+    if (base === a) pts.add(pt);
+    if (base === b) pts.add(sign * pt + 0);
+  }));
+  const lines = [...pts].sort((x, y) => x - y);
+  const rows = h.filter((r) => Object.keys(r.p).some((c) => [a, b].includes(lineOf(c)[0])));
+  if (!rows.length) return `<span class="muted">Снимков по этому рынку нет.</span>`;
+  const [la, lb] = [COLS.find((c) => c[0] === a)[1], COLS.find((c) => c[0] === b)[1]];
+  const head = (pt) => sign < 0 ? `${fmtPt(a, pt)} / ${fmtPt(b, sign * pt + 0)}` : fmtPt(a, pt);
+  const get = (r, base, pt) => r && r.p[`${base}@${pt}`] ? r.p[`${base}@${pt}`][0] : null;
+  return `<table class="hist"><thead>
+      <tr><th rowspan="2">Снимок</th>${lines.map((pt) => `<th colspan="2" class="grp">${head(pt)}</th>`).join("")}</tr>
+      <tr>${lines.map(() => `<th class="grp">${la}</th><th>${lb}</th>`).join("")}</tr></thead><tbody>
+    ${rows.map((r, i) => `<tr><td>${fmtDT(r.ts)}</td>${lines.map((pt) => {
+      const pb = sign * pt + 0, prev = i ? rows[i - 1] : null;
+      return `<td class="num grp">${histVal(get(r, a, pt), get(prev, a, pt))}</td><td class="num">${histVal(get(r, b, pb), get(prev, b, pb))}</td>`;
     }).join("")}</tr>`).join("")}</tbody></table>`;
 }
 
@@ -529,7 +585,12 @@ function setTab(tab) {
 }
 
 document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
-$("moveRows").addEventListener("click", (e) => { const tr = e.target.closest("tr.ev"); if (tr) toggleHistory(tr.dataset.id); });
+$("moveRows").addEventListener("click", (e) => {
+  const btn = e.target.closest(".histBtn");
+  if (btn) { state.histMarket[btn.dataset.id] = btn.dataset.m; renderMoves(); return; }
+  const tr = e.target.closest("tr.ev");
+  if (tr) toggleHistory(tr.dataset.id);
+});
 $("startedMoves").addEventListener("change", loadMoves);
 document.querySelectorAll(".marketSel").forEach((sel) => {
   sel.innerHTML = `<option value="">все</option>` + Object.entries(MARKET_NAMES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
