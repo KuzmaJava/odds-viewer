@@ -169,12 +169,41 @@ def test_quota_guard_stops_paid_event_calls():
     assert any("квота" in e for e in res["errors"])
 
 
-def test_lines_fetched_per_match_only_within_window():
+def _ev_row(store, eid, commence, opened):
+    store.save_prices({"id": eid, "sport_key": "soccer_epl", "sport_title": "EPL", "home": "K", "away": "I",
+                       "commence_time": iso(commence)}, iso(opened), {"home": (2.0, None)})
+    store.mark(eid, "opened_at", iso(opened))
+    return store.event(eid)
+
+
+def test_lines_schedule_12h_then_every_3h_from_13h_before_kickoff():
+    s = Store(":memory:")
+    p = _poller(FlowClient(), s)
+    now = utc_now()
+    kickoff = now + timedelta(days=3)
+    ev = _ev_row(s, "m", kickoff, now)
+    assert not p.lines_due(ev, now + timedelta(hours=11))
+    assert p.lines_due(ev, now + timedelta(hours=12))            # раз в 12 ч
+    # снимок за 15 ч до старта; за 13 ч — вход в окно «каждые 3 ч», снимаем сразу
+    s.mark("m", "lines_at", iso(kickoff - timedelta(hours=15)))
+    ev = s.event("m")
+    assert not p.lines_due(ev, kickoff - timedelta(hours=13, minutes=30))
+    assert p.lines_due(ev, kickoff - timedelta(hours=13))
+    s.mark("m", "lines_at", iso(kickoff - timedelta(hours=13)))
+    ev = s.event("m")
+    assert not p.lines_due(ev, kickoff - timedelta(hours=11))
+    assert p.lines_due(ev, kickoff - timedelta(hours=10))         # 13 -> 10 -> 7 -> 4
+    assert not p.lines_due(ev, kickoff - timedelta(minutes=50))   # за час — уже закрытие
+
+
+def test_run_cycle_takes_lines_for_due_matches_only():
     c, s = FlowClient(), Store(":memory:")
     p = _poller(c, s)
-    c.league = [_raw("soon", utc_now() + timedelta(hours=5), _bm(total=None, spread=None)),
-                _raw("later", utc_now() + timedelta(days=3), _bm(total=None, spread=None))]
-    c.per_event["soon"] = {**_raw("soon", utc_now() + timedelta(hours=5)), "bookmakers": [_bm(h2h=(0, 0, 0))]}
-    p.poll_once()
-    assert [x[1] for x in c.calls if x[0] == "event"] == ["soon"]
-    assert "over@2.5" in s.history("soon")[0]["p"] and "over@2.5" not in s.history("later")[0]["p"]
+    now = utc_now()
+    _ev_row(s, "due", now + timedelta(days=2), now - timedelta(hours=13))
+    _ev_row(s, "fresh", now + timedelta(days=2), now - timedelta(hours=1))
+    c.per_event["due"] = {**_raw("due", now + timedelta(days=2)), "bookmakers": [_bm(h2h=(0, 0, 0))]}
+    s.set_setting("last_poll_at:soccer_epl", iso(now))  # лиге опрос пока не нужен
+    res = p.run_cycle(now=now)
+    assert [x[1] for x in c.calls if x[0] == "event"] == ["due"] and res["lines"] == 1
+    assert s.event("due")["lines_at"] == iso(now) and "over@2.5" in s.history("due")[-1]["p"]

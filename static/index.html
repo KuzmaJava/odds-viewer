@@ -315,7 +315,7 @@ function detailsHtml(ev) {
     linesTable(ev, "it1_over", "it1_under", "ИТ1", 1),
     linesTable(ev, "it2_over", "it2_under", "ИТ2", 1),
   ].filter(Boolean);
-  return `<div class="detailsGrid">${lines.join("") || `<span class="muted">Линий тоталов и фор пока нет: они снимаются при появлении матча и за сутки до старта.</span>`}</div>
+  return `<div class="detailsGrid">${lines.join("") || `<span class="muted">Линий тоталов и фор пока нет: они снимаются при появлении матча, раз в 12 ч, а за 13 ч до старта — раз в 3 ч.</span>`}</div>
     ${chartSection(ev)}
     ${historySection(ev.id)}`;
 }
@@ -625,12 +625,12 @@ const loadRises = () => loadMoveList("rises");
 // ---------- лиги ----------
 function updateEstimate() {
   const n = document.querySelectorAll("#leagueList input:checked").length;
-  const p = state.status?.policy || { base_hours: 3, near_hours: 1, league_markets: "h2h", lines_window_hours: 24 };
+  const p = state.status?.policy || { base_hours: 3, near_hours: 2, league_markets: "h2h" };
   const k = (p.league_markets || "h2h").split(",").length;          // рынков в плановом опросе лиги
   const polls = Math.round((24 / p.base_hours) * 30 * 1.3);          // ≈ опросов лиги в месяц (с учётом «часто перед матчем»)
   $("estimate").textContent =
     `Выбрано лиг: ${n} → опросы лиг ≈ ${n * polls * k} запр./мес + ≈ 30 на каждый матч ` +
-    `(все линии тоталов и фор: при появлении, в последние ${p.lines_window_hours ?? 24} ч и на закрытии). ` +
+    `(все линии тоталов и фор: открытие, раз в 12 ч, за 13 ч до старта — раз в 3 ч, закрытие). ` +
     `Для лиги с ~40 матчами в месяц ≈ ${polls * k + 40 * 30}. Бесплатный план — 500/мес.`;
 }
 
@@ -779,7 +779,7 @@ $("pollNow").addEventListener("click", async () => {
           window.open(`https://github.com/${STATIC.repo}/actions/workflows/poll.yml`, "_blank", "noopener");
           return;
         }
-        if (!confirm("Опросить все лиги сейчас? Это 1 запрос квоты на лигу и 2 на каждый матч в ближайшие сутки (все линии).")) return;
+        if (!confirm("Опросить все лиги сейчас? Это 1 запрос квоты на лигу (1X2).")) return;
         btn.disabled = true;
         try {
           await dispatchWorkflow({ force: true });

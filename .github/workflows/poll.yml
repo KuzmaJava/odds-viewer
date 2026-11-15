@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Опросить все лиги прямо сейчас (1 запрос на лигу + 2 на каждый матч в ближайшие 24 ч)"
+        description: "Опросить все лиги прямо сейчас (1 запрос квоты на лигу)"
         type: boolean
         default: false
       sports:
@@ -51,7 +51,9 @@ jobs:
       NEAR_KICKOFF_HOURS: ${{ vars.NEAR_KICKOFF_HOURS || '8' }}
       MIN_QUOTA_REMAINING: ${{ vars.MIN_QUOTA_REMAINING || '10' }}
       LEAGUE_MARKETS: ${{ vars.LEAGUE_MARKETS || 'h2h' }}
-      LINES_WINDOW_HOURS: ${{ vars.LINES_WINDOW_HOURS || '24' }}
+      LINES_FAR_HOURS: ${{ vars.LINES_FAR_HOURS || '12' }}
+      LINES_NEAR_HOURS: ${{ vars.LINES_NEAR_HOURS || '3' }}
+      LINES_NEAR_WINDOW_HOURS: ${{ vars.LINES_NEAR_WINDOW_HOURS || '13' }}
       CLOSE_WINDOW_MIN: ${{ vars.CLOSE_WINDOW_MIN || '60' }}
       DEFAULT_REF: ${{ github.event.repository.default_branch }}
     steps:

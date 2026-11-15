@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS events (
     away          TEXT NOT NULL,
     commence_time TEXT NOT NULL,
     opened_at     TEXT,   -- снят полный набор рынков при появлении матча
-    closed_at     TEXT    -- снят реальный двойной шанс перед стартом
+    closed_at     TEXT,   -- снята линия закрытия перед стартом
+    lines_at      TEXT    -- последний снимок всех линий тоталов и фор
 );
 CREATE TABLE IF NOT EXISTS prices (
     event_id TEXT NOT NULL REFERENCES events(id),
@@ -49,6 +50,9 @@ class Store:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(SCHEMA)
+            cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(events)")}
+            if "lines_at" not in cols:  # локальная база старой версии
+                self._conn.execute("ALTER TABLE events ADD COLUMN lines_at TEXT")
 
     # --- settings ---
     def get_setting(self, key: str, default: Any = None) -> Any:
@@ -85,7 +89,7 @@ class Store:
         self.save_prices(event, ts, {c: (p, None) for c, p in (("home", home), ("draw", draw), ("away", away)) if p})
 
     def mark(self, event_id: str, field: str, ts: str) -> None:
-        assert field in ("opened_at", "closed_at")
+        assert field in ("opened_at", "closed_at", "lines_at")
         with self._lock, self._conn:
             self._conn.execute(f"UPDATE events SET {field} = ? WHERE id = ?", (ts, event_id))
 
@@ -138,6 +142,18 @@ class Store:
                 "SELECT * FROM events WHERE closed_at IS NULL AND commence_time > ? AND commence_time <= ? "
                 "ORDER BY commence_time", (after, before))]
 
+    def upcoming(self, after: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            return [dict(r) for r in self._conn.execute(
+                "SELECT * FROM events WHERE commence_time > ? ORDER BY commence_time", (after,))]
+
+    def last_lines_ts(self, event_id: str) -> Optional[str]:
+        """Время последнего снимка, в котором есть линии тоталов/фор (для матчей до появления lines_at)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT MAX(ts) t FROM prices WHERE event_id = ? AND code LIKE '%@%'", (event_id,)).fetchone()
+        return row["t"] if row else None
+
     def next_commence(self, sport_key: str, after: str) -> Optional[str]:
         """Время ближайшего ещё не начавшегося матча лиги (по данным последних опросов)."""
         with self._lock:
@@ -184,7 +200,7 @@ class Store:
             if not snaps:
                 continue
             # Матчи из старого формата уже были в базе до появления «открытия» — считаем их открытыми
-            for field in ("opened_at", "closed_at"):
+            for field in ("opened_at", "closed_at", "lines_at"):
                 value = ev.get(field) or (snaps[0][0] if v1 and field == "opened_at" else None)
                 if value:
                     self.mark(meta["id"], field, value)
