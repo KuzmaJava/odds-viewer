@@ -210,3 +210,23 @@ def test_run_cycle_takes_lines_for_due_matches_only():
     snap = s.history("due")[-1]["p"]
     assert snap["home"] == [1.9, None]          # 1X2 и линии — в одном снимке, в одно время
     assert not [x for x in c.calls if x[0] == "odds"]  # запросов по лиге больше нет
+
+
+def test_event_removed_from_api_is_not_requested_again():
+    from app.odds_client import OddsApiError
+
+    class Gone(FlowClient):
+        def event_odds(self, sport, event_id, markets, bookmakers):
+            self.calls.append(("event", event_id, markets))
+            raise OddsApiError(404, "Event not found. The event may have expired or the event id is invalid.")
+
+    c, s = Gone(), Store(":memory:")
+    p = _poller(c, s)
+    now = utc_now()
+    _ev_row(s, "gone", now + timedelta(days=2), now - timedelta(hours=13))
+    s.set_setting("last_poll_at:soccer_epl", iso(now))
+    res = p.run_cycle(now=now)
+    assert res["errors"] == [] and s.event("gone")["closed_at"]
+    c.calls.clear()
+    p.run_cycle(now=now + timedelta(hours=13))
+    assert [x for x in c.calls if x[0] == "event"] == []

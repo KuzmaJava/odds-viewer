@@ -227,6 +227,8 @@ class Poller:
             try:
                 closed += self._event_snapshot(raw, self.close_markets, ts, "closed_at")
             except Exception as e:  # noqa: BLE001
+                if self._event_gone(e, ev):
+                    continue
                 errors.append(f"{ev['home']} — {ev['away']} (закрытие): {e}")
         return closed
 
@@ -279,8 +281,18 @@ class Poller:
             try:
                 taken += self._event_snapshot(raw, self.lines_markets, ts, "lines_at")
             except Exception as e:  # noqa: BLE001
+                if self._event_gone(e, ev):
+                    continue
                 errors.append(f"{ev['home']} — {ev['away']} (линии): {e}")
         return taken
+
+    def _event_gone(self, e: Exception, ev: Dict[str, Any]) -> bool:
+        """Матч сняли с линии (перенос, отмена): API отвечает «Event not found». Больше его не запрашиваем."""
+        if "event not found" not in str(e).lower():
+            return False
+        self.store.mark(ev["id"], "closed_at", iso(utc_now()))
+        log.info("event gone: %s — %s", ev["home"], ev["away"])
+        return True
 
     def _finish(self, result: Dict[str, Any]) -> Dict[str, Any]:
         if self.client.quota.get("remaining") is not None:
