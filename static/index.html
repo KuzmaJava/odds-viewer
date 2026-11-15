@@ -270,9 +270,12 @@ async function loadStatus() {
   const p = st.policy;
   const near = st.schedule.filter((s) => s.interval_hours === p.near_hours).length;
   $("meta").textContent =
-    `Лиг: ${st.tracked_sports.length} · новые матчи — каждые 15 мин · опрос раз в ${p.base_hours} ч, за ${p.near_window_hours} ч до матча — раз в ${p.near_hours} ч` +
+    `Лиг: ${st.tracked_sports.length} · новые матчи — каждые 15 мин` +
+    ` · 1X2: раз в ${p.base_hours} ч, за ${p.near_window_hours} ч до матча — раз в ${p.near_hours} ч` +
     (near ? ` (сейчас часто: ${near})` : "") +
-    ` · последний опрос ${fmtDT(st.last_poll_at)} · следующий ${fmtDT(st.next_poll_at)}${q}`;
+    (p.lines_far_hours ? ` · тоталы и форы: раз в ${p.lines_far_hours} ч, за ${p.lines_near_window_hours} ч до матча — раз в ${p.lines_near_hours} ч` : "") +
+    ` · закрытие за ${Math.round(p.close_window_min || 60)} мин` +
+    ` · последний опрос 1X2 ${fmtDT(st.last_poll_at)} · следующий ${fmtDT(st.next_poll_at)}${q}`;
   if (STATIC) $("meta").textContent += ` · данные собраны ${fmtDT(STATIC.generated_at)}`;
   const msgs = [];
   if (st.demo && !STATIC) msgs.push("Демо-режим: ключ ODDS_API_KEY не задан — коэффициенты не меняются.");
