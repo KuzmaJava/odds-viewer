@@ -100,8 +100,7 @@ def main(argv=None) -> int:
         if client.demo:
             print("ODDS_API_KEY не задан", file=sys.stderr)
             return 1
-        due = poller.sports if args.force else poller.due_sports(utc_now(), timedelta(minutes=CRON_SLACK_MIN))
-        print(f"Отслеживаемые лиги: {poller.sports}; к плановому опросу: {due or 'нет'}")
+        print(f"Отслеживаемые лиги: {poller.sports}; следующий снимок по расписанию: {poller.next_snapshot() or 'нет'}")
         result = poller.run_cycle(force=args.force, slack=timedelta(minutes=CRON_SLACK_MIN))
         print(json.dumps(result, ensure_ascii=False))
         if result["sports"] or not sports:

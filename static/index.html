@@ -105,7 +105,8 @@
     <div class="toolbar">
       <label><input type="checkbox" id="startedMoves"> показывать начавшиеся</label>
       <button id="csvMoves" title="Скачать текущий список матчей в CSV">Скачать CSV</button>
-      <span class="muted">Значение — текущий коэффициент; под ним — открытие и изменение. Тотал и фора — основная линия
+      <span class="muted">Все исходы матча снимаются в один момент: при появлении, раз в 12 ч, за 13 ч до старта — раз в 3 ч, и закрытие за час.
+        Значение — текущий коэффициент; под ним — открытие и изменение. Тотал и фора — основная линия
         (коэффициенты ближе всего друг к другу); все линии без четвертных — по клику на матч. Реальный двойной шанс снимается при появлении
         матча и за час до старта, между ними — курсивом расчёт из 1X2.</span>
     </div>
@@ -268,14 +269,11 @@ async function loadStatus() {
   const st = state.status = await api("/api/status");
   const q = st.quota && st.quota.remaining != null ? ` · квота: осталось ${st.quota.remaining}` : "";
   const p = st.policy;
-  const near = st.schedule.filter((s) => s.interval_hours === p.near_hours).length;
   $("meta").textContent =
     `Лиг: ${st.tracked_sports.length} · новые матчи — каждые 15 мин` +
-    ` · 1X2: раз в ${p.base_hours} ч, за ${p.near_window_hours} ч до матча — раз в ${p.near_hours} ч` +
-    (near ? ` (сейчас часто: ${near})` : "") +
-    (p.lines_far_hours ? ` · тоталы и форы: раз в ${p.lines_far_hours} ч, за ${p.lines_near_window_hours} ч до матча — раз в ${p.lines_near_hours} ч` : "") +
-    ` · закрытие за ${Math.round(p.close_window_min || 60)} мин` +
-    ` · последний опрос 1X2 ${fmtDT(st.last_poll_at)} · следующий ${fmtDT(st.next_poll_at)}${q}`;
+    ` · снимки всех исходов: раз в ${p.lines_far_hours} ч, за ${p.lines_near_window_hours} ч до матча — раз в ${p.lines_near_hours} ч` +
+    `, закрытие за ${Math.round(p.close_window_min || 60)} мин` +
+    ` · последний снимок ${fmtDT(st.last_poll_at)} · следующий ${fmtDT(st.next_poll_at)}${q}`;
   if (STATIC) $("meta").textContent += ` · данные собраны ${fmtDT(STATIC.generated_at)}`;
   const msgs = [];
   if (st.demo && !STATIC) msgs.push("Демо-режим: ключ ODDS_API_KEY не задан — коэффициенты не меняются.");
@@ -628,13 +626,12 @@ const loadRises = () => loadMoveList("rises");
 // ---------- лиги ----------
 function updateEstimate() {
   const n = document.querySelectorAll("#leagueList input:checked").length;
-  const p = state.status?.policy || { base_hours: 3, near_hours: 2, league_markets: "h2h" };
-  const k = (p.league_markets || "h2h").split(",").length;          // рынков в плановом опросе лиги
-  const polls = Math.round((24 / p.base_hours) * 30 * 1.3);          // ≈ опросов лиги в месяц (с учётом «часто перед матчем»)
+  // снимок матча ≈ 3 запроса; открытие и закрытие ≈ 5; матч в линии ~5 дней: ≈ 8 снимков раз в 12 ч + 4 за 13 ч
+  const perMatch = 5 + 8 * 3 + 4 * 3 + 5;
   $("estimate").textContent =
-    `Выбрано лиг: ${n} → опросы лиг ≈ ${n * polls * k} запр./мес + ≈ 30 на каждый матч ` +
-    `(все линии тоталов и фор: открытие, раз в 12 ч, за 13 ч до старта — раз в 3 ч, закрытие). ` +
-    `Для лиги с ~40 матчами в месяц ≈ ${polls * k + 40 * 30}. Бесплатный план — 500/мес.`;
+    `Выбрано лиг: ${n}. Квота зависит от числа матчей: ≈ ${perMatch} запросов на матч ` +
+    `(все исходы в одном снимке: открытие, раз в 12 ч, за 13 ч — раз в 3 ч, закрытие). ` +
+    `Лига с ~40 матчами в месяц ≈ ${40 * perMatch}/мес. Бесплатный план — 500/мес.`;
 }
 
 async function loadLeagues() {
@@ -782,7 +779,7 @@ $("pollNow").addEventListener("click", async () => {
           window.open(`https://github.com/${STATIC.repo}/actions/workflows/poll.yml`, "_blank", "noopener");
           return;
         }
-        if (!confirm("Опросить все лиги сейчас? Это 1 запрос квоты на лигу (1X2).")) return;
+        if (!confirm("Снять все предстоящие матчи сейчас, вне расписания? Это ≈ 3 запроса квоты на каждый матч.")) return;
         btn.disabled = true;
         try {
           await dispatchWorkflow({ force: true });

@@ -26,7 +26,7 @@ def status_dict(poller: Poller, demo: bool) -> Dict[str, Any]:
         },
         "schedule": schedule,
         "last_poll_at": poller.last_poll_at,
-        "next_poll_at": min((s["next_poll_at"] for s in schedule), default=None),
+        "next_poll_at": poller.next_snapshot(),
         "last_result": last_result,
         "last_error": poller.last_error or ("; ".join(errors) or None),
         "quota": quota,

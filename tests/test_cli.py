@@ -50,6 +50,7 @@ class FakeClient:
         return []
 
     def event_odds(self, sport, event_id, markets, bookmakers):
+        self.calls.append(f"event:{event_id}")
         return {}
 
     def sports(self):
@@ -80,9 +81,9 @@ def test_cli_run_polls_due_then_skips_until_next_slot(tmp_path, monkeypatch):
     assert fake.calls == ["soccer_epl"]
     assert "changed=false" in out_file.read_text()
 
-    # --force опрашивает независимо от расписания
+    # --force снимает все предстоящие матчи (запросом по матчу) независимо от расписания
     assert cli.main(["run", "--force", "--state", str(state), "--out", str(site)]) == 0
-    assert fake.calls == ["soccer_epl", "soccer_epl"]
+    assert fake.calls == ["soccer_epl", "event:e1"]
 
 
 def test_cli_slack_lets_hourly_cron_catch_slightly_late_slot():

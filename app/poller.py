@@ -1,16 +1,11 @@
-"""Фоновый опрос Pinnacle с адаптивным расписанием по каждой лиге.
+"""Опрос Pinnacle: у каждого матча своё расписание снимков, все исходы снимаются в один момент.
 
-- Обычно лига опрашивается раз в `base_hours` (по умолчанию 3 ч).
-- Если в лиге есть матч, который начнётся в ближайшие `near_window_hours` (8 ч),
-  лига опрашивается раз в `near_hours` (1 ч) — до начала этого матча.
-
-Плановый опрос: один запрос /odds на лигу (1X2, 1 запрос квоты).
-Все линии тоталов и фор — запросом по матчу (2 запроса): раз в 12 ч от открытия, а когда до старта
-13 ч и меньше — раз в 3 ч (13, 10, 7, 4 ч до старта).
-Кроме того, каждый цикл (15 мин):
-- бесплатно проверяется список матчей; новый матч сразу снимается полным набором рынков
-  (1X2, реальный двойной шанс, все линии тоталов и фор, инд. тоталы) — это открытие линии;
-- за час до старта — то же самое ещё раз: линия закрытия.
+Снимок матча = один запрос по матчу: 1X2 + все линии тоталов и фор (+ инд. тоталы, если есть), ≈ 3 запроса квоты.
+- открытие: как только матч появился (бесплатная проверка списка каждые 15 мин) — плюс реальный двойной шанс;
+- раз в 12 ч, пока до старта больше 13 ч;
+- за 13 ч до старта и дальше раз в 3 ч: 13, 10, 7, 4 ч;
+- закрытие примерно за час до старта — плюс реальный двойной шанс.
+Запрос по всей лиге (1X2) делается только при первом подключении лиги.
 """
 import asyncio
 import logging
@@ -44,7 +39,7 @@ class Poller:
                  base_hours: float = 3, near_hours: float = 1, near_window_hours: float = 8,
                  league_markets: str = "h2h",
                  open_markets: str = "h2h,double_chance,alternate_totals,alternate_spreads,team_totals,alternate_team_totals",
-                 lines_markets: str = "alternate_totals,alternate_spreads,team_totals,alternate_team_totals",
+                 lines_markets: str = "h2h,alternate_totals,alternate_spreads,team_totals,alternate_team_totals",
                  close_markets: str = "h2h,double_chance,alternate_totals,alternate_spreads,team_totals,alternate_team_totals",
                  lines_far_hours: float = 12, lines_near_hours: float = 3, lines_near_window_hours: float = 13,
                  close_window_min: float = 60, cycle_seconds: int = 900):
@@ -164,7 +159,10 @@ class Poller:
                 continue
             known = self.store.event_ids(sport)
             for raw in listed:
-                if raw["id"] in known or parse_iso(raw["commence_time"]) <= now:
+                if raw["id"] in known:
+                    self.store.update_commence(raw["id"], raw["commence_time"])  # перенос матча
+                    continue
+                if parse_iso(raw["commence_time"]) <= now:
                     continue
                 if self._quota_low():
                     errors.append(self._quota_error())
@@ -247,10 +245,31 @@ class Poller:
             return True  # только что вошли в последние 13 ч
         return now - last_dt >= (self.lines_near if near else self.lines_far) - slack
 
-    def _snap_lines(self, now: datetime, ts: str, errors: List[str]) -> int:
+    def next_snapshot_at(self, ev: Dict[str, Any], now: datetime) -> Optional[datetime]:
+        """Когда по расписанию следующий снимок матча (для статуса на сайте)."""
+        start = parse_iso(ev["commence_time"])
+        if start <= now or ev.get("closed_at"):
+            return None
+        close_at = start - self.close_window
+        last = ev.get("lines_at") or self.store.last_lines_ts(ev["id"]) or ev.get("opened_at")
+        if not last:
+            return now
+        last_dt, near_start = parse_iso(last), start - self.lines_near_window
+        due = min(last_dt + self.lines_far, near_start) if last_dt < near_start else last_dt + self.lines_near
+        return max(min(due, close_at), now)
+
+    def next_snapshot(self, now: Optional[datetime] = None) -> Optional[str]:
+        now = now or utc_now()
+        times = [t for ev in self.store.upcoming(iso(now)) if ev["sport_key"] in self.sports
+                 for t in [self.next_snapshot_at(ev, now)] if t]
+        return iso(min(times)) if times else None
+
+    def _snap_lines(self, now: datetime, ts: str, errors: List[str], force: bool = False) -> int:
         taken = 0
         for ev in self.store.upcoming(iso(now)):
-            if ev["sport_key"] not in self.sports or not self.lines_due(ev, now):
+            if ev["sport_key"] not in self.sports or ev.get("closed_at"):
+                continue
+            if not force and not self.lines_due(ev, now):
                 continue
             if self._quota_low():
                 errors.append(self._quota_error())
@@ -284,17 +303,21 @@ class Poller:
 
     def run_cycle(self, force: bool = False, slack: timedelta = timedelta(0),
                   now: Optional[datetime] = None) -> Dict[str, Any]:
-        """Один запуск (cron каждые 15 мин): новые матчи -> плановый опрос лиг -> линии закрытия.
+        """Один запуск (cron каждые 15 мин): новые матчи -> новые лиги -> закрытие -> снимки по расписанию.
+        force — снять все предстоящие матчи сейчас, не глядя на расписание.
         changed=False, если ничего не сохранено и нет новых ошибок — тогда коммитить нечего."""
         with self._lock:
             now = now or utc_now()
             ts = iso(now)
             errors: List[str] = []
             opened = self._discover(self.sports, now, ts, errors)
-            due = list(self.sports) if force else self.due_sports(now, slack)
-            saved, polled, opened2 = self._poll_leagues(due, now, ts, errors) if due else (0, [], 0)
+            # Запрос по лиге — только для только что подключённых лиг (снять всё, что уже висит)
+            first = [sp for sp in self.sports if not self.sport_last_poll(sp)]
+            saved, polled, opened2 = self._poll_leagues(first, now, ts, errors) if first else (0, [], 0)
             closed = self._close_lines(now, ts, errors)
-            lines = self._snap_lines(now, ts, errors)
+            lines = self._snap_lines(now, ts, errors, force=force)
+            if lines or closed or opened or opened2:
+                self.store.set_setting("last_poll_at", ts)
             result = {"at": ts, "sports": polled, "snapshots_saved": saved,
                       "opened": opened + opened2, "closed": closed, "lines": lines, "errors": errors}
             changed = bool(polled or result["opened"] or closed or lines or

@@ -202,8 +202,11 @@ def test_run_cycle_takes_lines_for_due_matches_only():
     now = utc_now()
     _ev_row(s, "due", now + timedelta(days=2), now - timedelta(hours=13))
     _ev_row(s, "fresh", now + timedelta(days=2), now - timedelta(hours=1))
-    c.per_event["due"] = {**_raw("due", now + timedelta(days=2)), "bookmakers": [_bm(h2h=(0, 0, 0))]}
+    c.per_event["due"] = {**_raw("due", now + timedelta(days=2)), "bookmakers": [_bm(h2h=(1.9, 3.5, 4.1))]}
     s.set_setting("last_poll_at:soccer_epl", iso(now))  # лиге опрос пока не нужен
     res = p.run_cycle(now=now)
     assert [x[1] for x in c.calls if x[0] == "event"] == ["due"] and res["lines"] == 1
     assert s.event("due")["lines_at"] == iso(now) and "over@2.5" in s.history("due")[-1]["p"]
+    snap = s.history("due")[-1]["p"]
+    assert snap["home"] == [1.9, None]          # 1X2 и линии — в одном снимке, в одно время
+    assert not [x for x in c.calls if x[0] == "odds"]  # запросов по лиге больше нет

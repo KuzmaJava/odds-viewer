@@ -142,6 +142,11 @@ class Store:
                 "SELECT * FROM events WHERE closed_at IS NULL AND commence_time > ? AND commence_time <= ? "
                 "ORDER BY commence_time", (after, before))]
 
+    def update_commence(self, event_id: str, commence_time: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("UPDATE events SET commence_time = ? WHERE id = ? AND commence_time <> ?",
+                               (commence_time, event_id, commence_time))
+
     def upcoming(self, after: str) -> List[Dict[str, Any]]:
         with self._lock:
             return [dict(r) for r in self._conn.execute(
