@@ -78,3 +78,21 @@ tr.mainline td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .err { color: var(--drop); }
 .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
 .flag { width: 16px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; box-shadow: 0 0 0 1px var(--line); object-fit: cover; }
+.metaShort { display: none; }
+.metaShort summary { cursor: pointer; }
+.metaShort[open] summary { margin-bottom: 4px; }
+/* Телефон: закреплена только строка вкладок; заголовок и статус прокручиваются, статус свёрнут */
+@media (max-width: 700px) {
+  header.top { display: contents; }
+  header.top > h1 { padding: 12px 14px 4px; background: var(--panel); margin: 0; }
+  header.top > nav { position: sticky; top: 0; z-index: 3; background: var(--panel); padding: 6px 10px;
+    border-bottom: 1px solid var(--line); overflow-x: auto; }
+  header.top > nav button { padding: 6px 10px; flex: none; }
+  header.top > .spacer { display: none; }
+  header.top > .meta { display: block; background: var(--panel); padding: 8px 14px; }
+  header.top > .pollBtn { margin: 0 14px 8px; }
+  .metaFull { display: none; }
+  .metaShort { display: block; }
+  main { padding: 12px 10px 40px; }
+  .banner { margin: 10px 10px 0; }
+}

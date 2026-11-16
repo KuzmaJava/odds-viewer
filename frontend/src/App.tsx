@@ -29,6 +29,11 @@ function quotaText(st: Status, titles: Record<string, string>) {
     .map(([k, v]) => `${k === "default" ? "общий ключ" : titles[k] ?? k} ${v.remaining}`).join(", ");
 }
 
+// Коротко — для телефона: число лиг и время снимков; полный текст открывается по нажатию
+function metaShort(st: Status) {
+  return `Лиг: ${st.tracked_sports.length} · снимок ${fmtDT(st.last_poll_at)} · следующий ${fmtDT(st.next_poll_at)}`;
+}
+
 function metaText(st: Status, titles: Record<string, string>, generatedAt?: string) {
   const p = st.policy;
   const parts = [`Лиг: ${st.tracked_sports.length}`, "новые матчи — каждые 15 мин"];
@@ -106,7 +111,7 @@ export function App({ source }: { source: DataSource }) {
 
   return (
     <>
-      <header>
+      <header className="top">
         <h1>Pinnacle · движение линии</h1>
         <nav>
           {TABS.map(([k, title]) => (
@@ -114,9 +119,20 @@ export function App({ source }: { source: DataSource }) {
           ))}
         </nav>
         <div className="spacer" />
-        <div className="meta">{status ? metaText(status, Object.fromEntries((source.site?.sports ?? []).map((x) => [x.key, x.title])), source.site?.generated_at) : "Загрузка…"}</div>
+        {(() => {
+          const full = status ? metaText(status, Object.fromEntries((source.site?.sports ?? []).map((x) => [x.key, x.title])), source.site?.generated_at) : "Загрузка…";
+          return (
+            <div className="meta">
+              <span className="metaFull">{full}</span>
+              <details className="metaShort">
+                <summary>{status ? metaShort(status) : "Загрузка…"}</summary>
+                <div>{full}</div>
+              </details>
+            </div>
+          );
+        })()}
         {(!source.isStatic || repo) && (
-          <button onClick={pollNow} disabled={busy} title="Внеплановый снимок всех лиг (тратит квоту)">
+          <button className="pollBtn" onClick={pollNow} disabled={busy} title="Внеплановый снимок всех лиг (тратит квоту)">
             {busy ? "Запускаю…" : "Опросить сейчас"}
           </button>
         )}
