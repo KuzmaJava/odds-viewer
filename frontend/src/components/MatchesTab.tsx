@@ -4,6 +4,7 @@ import type { DataSource } from "../data";
 import { fmtDT, localDT } from "../format";
 import { MARKET_NAMES, mainByBase, visibleCols } from "../markets";
 import type { EventMove, Policy } from "../types";
+import { Flag } from "../flags";
 import { MatchDetails } from "./MatchDetails";
 import { OddCell } from "./OddCell";
 
@@ -64,7 +65,7 @@ export function MatchesTab({ source, version, policy, league, onError }: {
                 <Fragment key={ev.id}>
                   <tr className="ev" onClick={() => toggle(ev.id)}>
                     <td className="muted">{fmtDT(ev.commence_time)}</td>
-                    <td className="left"><b>{ev.home} — {ev.away}</b><div className="muted">{ev.sport_title}</div></td>
+                    <td className="left"><b>{ev.home} — {ev.away}</b><div className="muted"><Flag sportKey={ev.sport_key} />{ev.sport_title}</div></td>
                     <td className="muted">{ev.snapshots}<div>с {fmtDT(ev.first_ts)}</div></td>
                     {cols.map(([code, , m], i) => <OddCell key={code} o={by[code]} first={i === 0 || cols[i - 1][2] !== m} />)}
                   </tr>

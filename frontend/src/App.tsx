@@ -45,7 +45,7 @@ function metaText(st: Status, titles: Record<string, string>, generatedAt?: stri
 export function App({ source }: { source: DataSource }) {
   const [tab, setTab] = useState<Tab>(savedTab);
   const [league, setLeague] = useState<string>(() => { try { return localStorage.getItem("league") || ""; } catch { return ""; } });
-  const [leagues, setLeagues] = useState<{ title: string; count: number }[]>([]);
+  const [leagues, setLeagues] = useState<{ title: string; key: string; count: number }[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
   const [version, setVersion] = useState(0);
   const [msg, setMsg] = useState<string | null>(null);
@@ -70,9 +70,9 @@ export function App({ source }: { source: DataSource }) {
   // Лиги с предстоящими матчами — для переключателя
   useEffect(() => {
     source.events(false).then((evs) => {
-      const counts = new Map<string, number>();
-      evs.forEach((e) => counts.set(e.sport_title, (counts.get(e.sport_title) ?? 0) + 1));
-      setLeagues([...counts].map(([title, count]) => ({ title, count })).sort((a, b) => a.title.localeCompare(b.title)));
+      const counts = new Map<string, { key: string; count: number }>();
+      evs.forEach((e) => counts.set(e.sport_title, { key: e.sport_key, count: (counts.get(e.sport_title)?.count ?? 0) + 1 }));
+      setLeagues([...counts].map(([title, v]) => ({ title, ...v })).sort((a, b) => a.title.localeCompare(b.title)));
     }, () => {});
   }, [source, version]);
   const leagueFilter = leagues.some((l) => l.title === league) ? league : "";

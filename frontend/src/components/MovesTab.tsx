@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { DataSource } from "../data";
 import { fmt, fmtDT, fmtPct } from "../format";
+import { Flag } from "../flags";
 import { MARKET_NAMES } from "../markets";
 import type { Market, MoveRow } from "../types";
 
@@ -49,7 +50,7 @@ export function MovesTab({ kind, source, version, league, onError }: {
                 <td className={r.derived ? "derived" : ""} title={`${MARKET_NAMES[r.market] ?? ""}${r.derived ? " · частично рассчитан из 1X2" : ""}`}>
                   <b>{r.label}</b>{r.point != null && !r.main && <div className="muted">не основная линия</div>}
                 </td>
-                <td className="left"><b>{r.home} — {r.away}</b><div className="muted">{r.sport_title}</div></td>
+                <td className="left"><b>{r.home} — {r.away}</b><div className="muted"><Flag sportKey={r.sport_key} />{r.sport_title}</div></td>
                 <td className="muted">{fmtDT(r.commence_time)}</td>
                 <td className="num grp">{fmt(r.opening)}</td>
                 <td className={`num ${cls}`}><b>{fmt(r.current)}</b></td>

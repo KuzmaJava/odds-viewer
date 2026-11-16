@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { DataSource } from "../data";
+import { Flag } from "../flags";
 import { dispatchWorkflow, forgetToken, getToken, saveToken } from "../github";
 import type { Policy, Sport } from "../types";
 
@@ -104,7 +105,7 @@ export function LeaguesTab({ source, tracked, policy, onSaved }: {
               const n = new Set(checked);
               if (e.target.checked) n.add(s.key); else n.delete(s.key);
               setChecked(n);
-            }} /> {s.title}
+            }} /> <Flag sportKey={s.key} />{s.title}
           </label>
         ))}
       </div>

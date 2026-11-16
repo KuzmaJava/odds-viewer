@@ -10,7 +10,7 @@ export function moveRows(events: EventMove[], minPct: number, rising: boolean): 
     if (ch == null || ch === 0) continue;
     if (rising ? ch >= t : ch <= -t) {
       res.push({
-        ...o, event_id: ev.id, sport_title: ev.sport_title, home: ev.home, away: ev.away,
+        ...o, event_id: ev.id, sport_key: ev.sport_key, sport_title: ev.sport_title, home: ev.home, away: ev.away,
         commence_time: ev.commence_time, snapshots: ev.snapshots, first_ts: ev.first_ts, last_ts: ev.last_ts,
       });
     }

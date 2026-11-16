@@ -36,6 +36,7 @@ export interface EventMove {
 
 export interface MoveRow extends Outcome {
   event_id: string;
+  sport_key?: string;
   sport_title: string;
   home: string;
   away: string;
