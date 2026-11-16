@@ -158,11 +158,29 @@ public final class Poller {
             }
             return false;
         }
-        boolean isNear = toStart.compareTo(nearWindow()) <= 0;
+        return intervalDue(ev.sportKey, start, lastDt, now);
+    }
+
+    /** По интервалам: раз в N ч, а когда до старта <= 13 ч — раз в 3 ч. */
+    private boolean intervalDue(String sport, Instant start, Instant lastDt, Instant now) {
+        boolean isNear = Duration.between(now, start).compareTo(nearWindow()) <= 0;
         if (isNear && Duration.between(lastDt, start).compareTo(nearWindow()) > 0) {
             return true; // только что вошли в последние 13 ч
         }
-        return Duration.between(lastDt, now).compareTo((isNear ? near() : far(ev.sportKey)).minus(SLACK)) >= 0;
+        return Duration.between(lastDt, now).compareTo((isNear ? near() : far(sport)).minus(SLACK)) >= 0;
+    }
+
+    private Instant intervalNext(String sport, Instant start, Instant lastDt) {
+        Instant nearStart = start.minus(nearWindow());
+        return lastDt.isBefore(nearStart) ? min(lastDt.plus(far(sport)), nearStart) : lastDt.plus(near());
+    }
+
+    /** Гибридный режим: пора ли снять 1X2 запросом по лиге (закрытие делает снимок по матчу). */
+    public boolean h2hDue(Store.Event ev, Instant now) {
+        Instant start = Times.parse(ev.commenceTime);
+        if (Duration.between(now, start).compareTo(closeWindow()) <= 0 || ev.closedAt != null) return false;
+        String last = firstNonNull(ev.h2hAt, ev.linesAt, store.lastLinesTs(ev.id), ev.openedAt);
+        return last == null || intervalDue(ev.sportKey, start, Times.parse(last), now);
     }
 
     /** Квоты ключа лиги едва хватает на закрытия её предстоящих матчей — промежуточные снимки пропускаем. */
@@ -196,9 +214,12 @@ public final class Poller {
                 Instant at = start.minus(Times.hours(p));
                 if (lastDt.isBefore(at.minus(SLACK)) && at.isBefore(due)) due = at;
             }
+            if (lc.hybrid()) {
+                String h = firstNonNull(ev.h2hAt, last);
+                due = min(due, intervalNext(ev.sportKey, start, Times.parse(h)));
+            }
         } else {
-            Instant nearStart = start.minus(nearWindow());
-            due = lastDt.isBefore(nearStart) ? min(lastDt.plus(far(ev.sportKey)), nearStart) : lastDt.plus(near());
+            due = intervalNext(ev.sportKey, start, lastDt);
         }
         Instant t = min(due, closeAt);
         return t.isBefore(now) ? now : t;
@@ -334,7 +355,8 @@ public final class Poller {
                 continue;
             }
             try {
-                if (eventSnapshot(rawOf(ev), cfg.linesMarkets(), ts, "lines_at")) taken++;
+                String markets = cfgFor(ev.sportKey).hybrid() ? Settings.HYBRID_LINES : cfg.linesMarkets();
+                if (eventSnapshot(rawOf(ev), markets, ts, "lines_at")) taken++;
             } catch (RuntimeException e) {
                 if (!eventGone(e, ev)) errors.add(ev.home + " — " + ev.away + " (линии): " + e.getMessage());
             }
@@ -346,6 +368,13 @@ public final class Poller {
     /** Почему пора снять лигу (или null): новая лига, новые матчи, расписание какого-то матча, закрытие. */
     private String leagueDue(String sport, Instant now, List<String> errors) {
         if (sportLastPoll(sport) == null) return "новая лига";
+        if (cfgFor(sport).hybrid()) {
+            // новые матчи и закрытие снимает запрос по матчу; по лиге — только частый 1X2
+            for (Store.Event ev : store.upcoming(Times.iso(now))) {
+                if (sport.equals(ev.sportKey) && h2hDue(ev, now)) return "расписание 1X2";
+            }
+            return null;
+        }
         JsonNode listed = Json.arr();
         try {
             listed = client.events(sport);
@@ -381,7 +410,7 @@ public final class Poller {
             Set<String> known = store.eventIds(sport);
             JsonNode events;
             try {
-                events = client.odds(sport, cfg.leagueSnapshotMarkets(), BOOKMAKER);
+                events = client.odds(sport, cfgFor(sport).hybrid() ? "h2h" : cfg.leagueSnapshotMarkets(), BOOKMAKER);
             } catch (RuntimeException e) {
                 errors.add(sport + ": " + e.getMessage());
                 continue;
@@ -396,6 +425,11 @@ public final class Poller {
                 if (!known.contains(id)) {
                     store.mark(id, "opened_at", ts);
                     opened++;
+                }
+                if (cfgFor(sport).hybrid()) {
+                    store.mark(id, "h2h_at", ts);
+                    saved++;
+                    continue;
                 }
                 store.mark(id, "lines_at", ts);
                 if (Duration.between(now, start).compareTo(closeWindow()) <= 0 && store.event(id).closedAt == null) {
@@ -418,7 +452,7 @@ public final class Poller {
     public ObjectNode runCycle(boolean force, Instant now) {
         String ts = Times.iso(now);
         List<String> errors = new ArrayList<>();
-        List<String> leagueSports = sports().stream().filter(sp -> cfgFor(sp).leagueMode()).toList();
+        List<String> leagueSports = sports().stream().filter(sp -> cfgFor(sp).leagueMode() || cfgFor(sp).hybrid()).toList();
         List<String> full = sports().stream().filter(sp -> !cfgFor(sp).leagueMode()).toList();
 
         // Полный режим: новые матчи -> новые лиги -> закрытие -> снимки по расписанию (запросы по матчу)

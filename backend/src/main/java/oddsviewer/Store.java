@@ -23,7 +23,7 @@ public final class Store {
     public static final class Event {
         public final String id;
         public String sportKey, sportTitle, home, away, commenceTime;
-        public String openedAt, closedAt, linesAt;
+        public String openedAt, closedAt, linesAt, h2hAt;
         final TreeMap<String, Map<String, Price>> snaps = new TreeMap<>();
 
         Event(String id) { this.id = id; }
@@ -70,6 +70,7 @@ public final class Store {
             case "opened_at" -> e.openedAt = ts;
             case "closed_at" -> e.closedAt = ts;
             case "lines_at" -> e.linesAt = ts;
+            case "h2h_at" -> e.h2hAt = ts;
             default -> throw new IllegalArgumentException(field);
         }
     }
@@ -161,6 +162,7 @@ public final class Store {
                     if (e.openedAt != null) o.put("opened_at", e.openedAt);
                     if (e.closedAt != null) o.put("closed_at", e.closedAt);
                     if (e.linesAt != null) o.put("lines_at", e.linesAt);
+                    if (e.h2hAt != null) o.put("h2h_at", e.h2hAt);
                     ArrayNode snaps = o.putArray("snapshots");
                     e.snaps.forEach((ts, prices) -> {
                         ObjectNode p = Json.obj();
@@ -196,7 +198,7 @@ public final class Store {
                 }
             }
             if (snaps.isEmpty()) continue;
-            for (String field : List.of("opened_at", "closed_at", "lines_at")) {
+            for (String field : List.of("opened_at", "closed_at", "lines_at", "h2h_at")) {
                 String value = textOrNull(ev, field);
                 if (value == null && v1 && field.equals("opened_at")) value = snaps.get(0).get(0).asText();
                 if (value != null) mark(m.id(), field, value);

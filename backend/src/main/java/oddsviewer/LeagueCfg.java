@@ -12,18 +12,19 @@ import java.util.Map;
  * <ul>
  *   <li>{@code leagueMode} — режим лиги: снимок одним запросом на всю лигу (1X2 + основной тотал);
  *       иначе полный режим — запрос по матчу со всеми нечетвертными линиями тоталов и фор;</li>
+ *   <li>{@code hybrid} — частый 1X2 одним запросом на лигу (по интервалам) + все линии запросом по матчу в точках;</li>
  *   <li>{@code points} — точки снимков в часах до старта (например, 13): открытие, эти точки и закрытие.
  *       Пусто — расписание по интервалам (раз в N ч, за 13 ч — раз в 3 ч);</li>
  *   <li>{@code farHours} — свой интервал фоновых снимков (иначе общий LINES_FAR_HOURS).</li>
  * </ul>
  * Задаётся переменной LEAGUE_SETTINGS — по строке (или через «;») на лигу:
  * <pre>
- * default: full, points 13h
+ * default: hybrid, points 24h 13h 4h, far 12h
  * soccer_uefa_nations_league: league
  * soccer_uefa_champs_league: league, far 24h
  * </pre>
  */
-public record LeagueCfg(boolean leagueMode, List<Double> points, Double farHours) {
+public record LeagueCfg(boolean leagueMode, boolean hybrid, List<Double> points, Double farHours) {
 
     public LeagueCfg {
         points = points.stream().sorted(Comparator.reverseOrder()).toList();
@@ -49,15 +50,16 @@ public record LeagueCfg(boolean leagueMode, List<Double> points, Double farHours
     }
 
     static LeagueCfg parseOne(String spec) {
-        boolean league = false;
+        boolean league = false, hybrid = false;
         List<Double> points = new ArrayList<>();
         Double far = null;
         String[] t = spec.toLowerCase(Locale.ROOT).replace(",", " ").trim().split("\\s+");
         for (int i = 0; i < t.length; i++) {
             switch (t[i]) {
                 case "" -> { }
-                case "full" -> league = false;
-                case "league" -> league = true;
+                case "full" -> { league = false; hybrid = false; }
+                case "league" -> { league = true; hybrid = false; }
+                case "hybrid" -> { league = false; hybrid = true; }
                 case "points" -> {
                     while (i + 1 < t.length && t[i + 1].matches("\\d+(\\.\\d+)?h?")) points.add(hours(t[++i]));
                 }
@@ -68,7 +70,7 @@ public record LeagueCfg(boolean leagueMode, List<Double> points, Double farHours
                 default -> throw new IllegalArgumentException("LEAGUE_SETTINGS: непонятное слово «" + t[i] + "»");
             }
         }
-        return new LeagueCfg(league, points, far);
+        return new LeagueCfg(league, hybrid, points, far);
     }
 
     private static double hours(String s) {
@@ -82,6 +84,13 @@ public record LeagueCfg(boolean leagueMode, List<Double> points, Double farHours
             double far = farHours != null ? farHours : s.linesFarHours();
             return "режим лиги (" + what + "): раз в " + Json.g(far) + " ч, за " + Json.g(s.linesNearWindowHours())
                     + " ч до матча — раз в " + Json.g(s.linesNearHours()) + " ч, закрытие";
+        }
+        if (hybrid) {
+            double far = farHours != null ? farHours : s.linesFarHours();
+            StringBuilder sb = new StringBuilder("1X2 раз в " + Json.g(far) + " ч (за " + Json.g(s.linesNearWindowHours())
+                    + " ч до матча — раз в " + Json.g(s.linesNearHours()) + " ч); все тоталы и форы: открытие");
+            points.forEach(p -> sb.append(", за ").append(Json.g(p)).append(" ч"));
+            return sb.append(", закрытие").toString();
         }
         if (byPoints()) {
             StringBuilder sb = new StringBuilder("все линии: открытие");

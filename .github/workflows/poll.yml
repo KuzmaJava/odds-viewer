@@ -53,9 +53,11 @@ jobs:
       MIN_QUOTA_REMAINING: ${{ vars.MIN_QUOTA_REMAINING || '10' }}
       LEAGUE_MARKETS: ${{ vars.LEAGUE_MARKETS || 'h2h' }}
       LEAGUE_MODE: ${{ vars.LEAGUE_MODE || '1' }}
-      # Настройки по лигам: клубные лиги — все нечетвертные тоталы и форы (открытие, за 13 ч, закрытие),
-      # турниры сборных и еврокубки (много матчей в одни дни) — режим лиги. Переопределяется переменной LEAGUE_SETTINGS.
-      LEAGUE_SETTINGS: "${{ vars.LEAGUE_SETTINGS || 'default: full, points 13h; soccer_uefa_nations_league: league; soccer_uefa_champs_league: league, far 24h; soccer_uefa_europa_league: league, far 24h; soccer_uefa_europa_conference_league: league, far 24h' }}"
+      # Настройки по лигам (переопределяются переменной LEAGUE_SETTINGS):
+      #  клубные лиги — hybrid: П1/X/П2 часто одним запросом на лигу (раз в 12 ч; АПЛ, Ла Лига, Серия А — раз в 24 ч;
+      #  за 13 ч до матча — раз в 3 ч) + все нечетвертные тоталы и форы запросом по матчу: открытие, за 24/13/4 ч, закрытие;
+      #  Лига наций и еврокубки — режим лиги.
+      LEAGUE_SETTINGS: "${{ vars.LEAGUE_SETTINGS || 'default: hybrid, points 24h 13h 4h, far 12h; soccer_epl: hybrid, points 24h 13h 4h, far 24h; soccer_spain_la_liga: hybrid, points 24h 13h 4h, far 24h; soccer_italy_serie_a: hybrid, points 24h 13h 4h, far 24h; soccer_uefa_nations_league: league; soccer_uefa_champs_league: league, far 24h; soccer_uefa_europa_league: league, far 24h; soccer_uefa_europa_conference_league: league, far 24h' }}"
       LEAGUE_SNAPSHOT_MARKETS: ${{ vars.LEAGUE_SNAPSHOT_MARKETS || 'h2h,totals' }}
       LINES_FAR_HOURS: ${{ vars.LINES_FAR_HOURS || '8' }}
       LINES_NEAR_HOURS: ${{ vars.LINES_NEAR_HOURS || '3' }}

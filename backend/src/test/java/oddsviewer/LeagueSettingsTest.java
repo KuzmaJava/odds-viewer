@@ -26,9 +26,9 @@ class LeagueSettingsTest {
     @Test
     void parsesSettings() {
         var m = LeagueCfg.parse(CFG);
-        assertEquals(new LeagueCfg(false, List.of(13.0), null), m.get("default"));
-        assertEquals(new LeagueCfg(true, List.of(), null), m.get("soccer_uefa_nations_league"));
-        assertEquals(new LeagueCfg(true, List.of(), 24.0), m.get("soccer_uefa_champs_league"));
+        assertEquals(new LeagueCfg(false, false, List.of(13.0), null), m.get("default"));
+        assertEquals(new LeagueCfg(true, false, List.of(), null), m.get("soccer_uefa_nations_league"));
+        assertEquals(new LeagueCfg(true, false, List.of(), 24.0), m.get("soccer_uefa_champs_league"));
         assertEquals(List.of(13.0, 4.0), LeagueCfg.parseOne("full, points 4h 13h").points());
         assertThrows(IllegalArgumentException.class, () -> LeagueCfg.parse("soccer_epl: fast"));
         Settings s = settings("soccer_epl");

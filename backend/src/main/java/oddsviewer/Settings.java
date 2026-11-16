@@ -13,6 +13,8 @@ public record Settings(
 
     public static final String OPEN_MARKETS = "h2h,double_chance,alternate_totals,alternate_spreads,team_totals,alternate_team_totals";
     public static final String LINES_MARKETS = "h2h,alternate_totals,alternate_spreads,team_totals,alternate_team_totals";
+    /** Промежуточные снимки гибридного режима: 1X2 уже идёт отдельным запросом по лиге — берём только линии. */
+    public static final String HYBRID_LINES = "alternate_totals,alternate_spreads,team_totals,alternate_team_totals";
 
     public static Settings defaults(List<String> sports) {
         return new Settings(sports, 10, "h2h", OPEN_MARKETS, LINES_MARKETS, OPEN_MARKETS, 12, 3, 13, 60, false, "h2h,totals", Map.of());
@@ -37,7 +39,7 @@ public record Settings(
     public LeagueCfg forSport(String sport) {
         LeagueCfg c = leagues.get(sport);
         if (c == null) c = leagues.get("default");
-        return c != null ? c : new LeagueCfg(leagueMode, List.of(), null);
+        return c != null ? c : new LeagueCfg(leagueMode, false, List.of(), null);
     }
 
     /** TRACK_SPORTS="a,b" -> [a, b]; пусто -> null. */
