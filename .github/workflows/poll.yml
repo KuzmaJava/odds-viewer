@@ -53,7 +53,7 @@ jobs:
       LEAGUE_MARKETS: ${{ vars.LEAGUE_MARKETS || 'h2h' }}
       LEAGUE_MODE: ${{ vars.LEAGUE_MODE || '1' }}
       LEAGUE_SNAPSHOT_MARKETS: ${{ vars.LEAGUE_SNAPSHOT_MARKETS || 'h2h,totals' }}
-      LINES_FAR_HOURS: ${{ vars.LINES_FAR_HOURS || '24' }}
+      LINES_FAR_HOURS: ${{ vars.LINES_FAR_HOURS || '8' }}
       LINES_NEAR_HOURS: ${{ vars.LINES_NEAR_HOURS || '3' }}
       LINES_NEAR_WINDOW_HOURS: ${{ vars.LINES_NEAR_WINDOW_HOURS || '13' }}
       CLOSE_WINDOW_MIN: ${{ vars.CLOSE_WINDOW_MIN || '60' }}
