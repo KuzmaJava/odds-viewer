@@ -112,6 +112,20 @@ build/install/odds-tracker/bin/odds-tracker build --state ../data/state.json --o
 
 Настройки — те же переменные окружения (`ODDS_API_KEY`, `LEAGUE_MODE`, `LINES_FAR_HOURS`, …).
 
+### Отдельный ключ API на лигу
+
+Секрет `ODDS_API_KEYS` (Settings → Secrets and variables → Actions → Secrets) — по строке на лигу:
+
+```
+soccer_epl=КЛЮЧ_1
+soccer_spain_la_liga=КЛЮЧ_2
+```
+
+Запросы по лиге идут её ключом; лиги без своего ключа — общим `ODDS_API_KEY` (он же используется для бесплатного
+списка лиг). Квота считается по каждому ключу: если ключ лиги почти исчерпан (`MIN_QUOTA_REMAINING`), останавливается
+только эта лига. Остаток по каждой лиге виден в шапке сайта. Ключ лиги можно узнать в каталоге: вкладка «Лиги»
+показывает названия, ключи — в `data.json` (`sports[].key`), например `soccer_epl`, `soccer_italy_serie_a`.
+
 ## Сайт (frontend/, React + TypeScript)
 
 Интерфейс — `frontend/` (Vite + React + TypeScript), собирается в статику и публикуется вместе с `data.json`.

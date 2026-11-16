@@ -9,6 +9,12 @@ public interface OddsApi {
     /** Остаток квоты из заголовков последнего ответа: remaining / used / last_cost. */
     Map<String, String> quota();
 
+    /** Остаток квоты ключа, которым опрашивается эта лига. */
+    default Map<String, String> quotaFor(String sport) { return quota(); }
+
+    /** Остаток по каждому ключу: "default" или ключ лиги -> квота (для статуса на сайте). */
+    default Map<String, Map<String, String>> quotasByKey() { return Map.of(); }
+
     /** Список лиг. Не тратит квоту. */
     JsonNode sports();
 

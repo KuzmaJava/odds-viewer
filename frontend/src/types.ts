@@ -64,8 +64,11 @@ export interface Status {
   last_poll_at: string | null;
   next_poll_at: string | null;
   last_error: string | null;
-  quota: { remaining?: string | null; used?: string | null; last_cost?: string | null };
+  quota: Quota;
+  quotas?: Record<string, Quota>;   // по ключам: "default" или ключ лиги (если у лиг свои ключи API)
 }
+
+export interface Quota { remaining?: string | null; used?: string | null; last_cost?: string | null }
 
 export interface Sport { key: string; title: string; group?: string; active?: boolean }
 

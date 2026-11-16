@@ -27,7 +27,7 @@ class CliTest {
 
     @AfterEach
     void restore() {
-        Cli.clientFactory = env -> new OddsClient(env.getOrDefault("ODDS_API_KEY", ""), "eu");
+        Cli.clientFactory = env -> KeyRouter.fromEnv(env, OddsClient::new);
     }
 
     Map<String, String> env(String sports) throws Exception {

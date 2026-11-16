@@ -44,6 +44,16 @@ public final class Export {
             JsonNode q = p.store.getSetting("quota");
             st.set("quota", q == null ? Json.obj() : q);
         }
+        // Остаток по ключам лиг (если у лиг свои ключи): живые значения поверх сохранённых
+        ObjectNode quotas = Json.obj();
+        JsonNode saved = p.store.getSetting("quotas");
+        if (saved != null && saved.isObject()) quotas.setAll((ObjectNode) saved.deepCopy());
+        p.client.quotasByKey().forEach((label, qm) -> {
+            if (qm.get("remaining") == null) return;
+            ObjectNode q = quotas.putObject(label);
+            qm.forEach(q::put);
+        });
+        if (!quotas.isEmpty()) st.set("quotas", quotas);
         return st;
     }
 

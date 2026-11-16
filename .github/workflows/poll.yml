@@ -45,6 +45,7 @@ jobs:
       changed: ${{ steps.run.outputs.changed }}
     env:
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      ODDS_API_KEYS: ${{ secrets.ODDS_API_KEYS }}  # необязательно: по строке на лигу «soccer_epl=ключ»
       TRACK_SPORTS: ${{ vars.TRACK_SPORTS || 'soccer_epl' }}
       POLL_BASE_HOURS: ${{ vars.POLL_BASE_HOURS || '3' }}
       POLL_NEAR_HOURS: ${{ vars.POLL_NEAR_HOURS || '2' }}

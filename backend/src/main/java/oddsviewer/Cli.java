@@ -37,7 +37,7 @@ public final class Cli {
 
     /** Для тестов можно подменить клиента и окружение. */
     static Function<Map<String, String>, OddsApi> clientFactory =
-            env -> new OddsClient(env.getOrDefault("ODDS_API_KEY", "").trim(), env.getOrDefault("ODDS_REGIONS", "eu"));
+            env -> KeyRouter.fromEnv(env, OddsClient::new);
 
     public static void main(String[] args) {
         System.exit(run(args, System.getenv(), Instant.now()));
@@ -71,6 +71,13 @@ public final class Cli {
         if (Files.exists(statePath)) store.load(Json.parse(read(statePath)));
         Settings cfg = Settings.fromEnv(env);
         OddsApi client = clientFactory.apply(env);
+        if (client == null) {
+            if (command.equals("run")) {
+                System.err.println("Не задан ни ODDS_API_KEY, ни ODDS_API_KEYS");
+                return 1;
+            }
+            client = new OddsClient("", "eu"); // build/normalize — к API не обращаемся
+        }
         Poller poller = new Poller(client, store, cfg);
         JsonNode sports = store.getSetting("sports_catalog");
         boolean changed = command.equals("build");
@@ -88,9 +95,9 @@ public final class Cli {
         }
 
         if (command.equals("run")) {
-            if (env.getOrDefault("ODDS_API_KEY", "").isBlank() && client instanceof OddsClient) {
-                System.err.println("ODDS_API_KEY не задан");
-                return 1;
+            if (client instanceof KeyRouter router) {
+                List<String> noKey = poller.sports().stream().filter(sp -> !router.hasKeyFor(sp)).toList();
+                if (!noKey.isEmpty()) System.err.println("Нет ключа API для лиг: " + noKey + " — они пропускаются");
             }
             System.out.println("Отслеживаемые лиги: " + poller.sports() + "; следующий снимок по расписанию: "
                     + (poller.nextSnapshot(now) == null ? "нет" : poller.nextSnapshot(now)));

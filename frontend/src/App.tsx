@@ -19,14 +19,24 @@ function savedTab(): Tab {
   return "moves";
 }
 
-function metaText(st: Status, generatedAt?: string) {
+// Остаток квоты: один ключ — одно число; ключи по лигам — по каждой лиге
+function quotaText(st: Status, titles: Record<string, string>) {
+  const q = st.quotas && Object.keys(st.quotas).length > 1 ? st.quotas : null;
+  if (!q) return st.quota?.remaining != null ? `квота: осталось ${st.quota.remaining}` : null;
+  return "квота: " + Object.entries(q)
+    .filter(([, v]) => v.remaining != null)
+    .map(([k, v]) => `${k === "default" ? "общий ключ" : titles[k] ?? k} ${v.remaining}`).join(", ");
+}
+
+function metaText(st: Status, titles: Record<string, string>, generatedAt?: string) {
   const p = st.policy;
   const parts = [`Лиг: ${st.tracked_sports.length}`, "новые матчи — каждые 15 мин"];
   if (p.league_mode) parts.push(`режим лиги: ${p.league_snapshot_markets === "h2h" ? "1X2" : "1X2 + основной тотал"} одним запросом на лигу`);
   parts.push(`снимки: раз в ${p.lines_far_hours} ч, за ${p.lines_near_window_hours} ч до матча — раз в ${p.lines_near_hours} ч, ` +
     `закрытие за ${Math.round(p.close_window_min ?? 60)} мин`);
   parts.push(`последний снимок ${fmtDT(st.last_poll_at)}`, `следующий ${fmtDT(st.next_poll_at)}`);
-  if (st.quota?.remaining != null) parts.push(`квота: осталось ${st.quota.remaining}`);
+  const quota = quotaText(st, titles);
+  if (quota) parts.push(quota);
   if (generatedAt) parts.push(`данные собраны ${fmtDT(generatedAt)}`);
   return parts.join(" · ");
 }
@@ -91,7 +101,7 @@ export function App({ source }: { source: DataSource }) {
           ))}
         </nav>
         <div className="spacer" />
-        <div className="meta">{status ? metaText(status, source.site?.generated_at) : "Загрузка…"}</div>
+        <div className="meta">{status ? metaText(status, Object.fromEntries((source.site?.sports ?? []).map((x) => [x.key, x.title])), source.site?.generated_at) : "Загрузка…"}</div>
         {(!source.isStatic || repo) && (
           <button onClick={pollNow} disabled={busy} title="Внеплановый снимок всех лиг (тратит квоту)">
             {busy ? "Запускаю…" : "Опросить сейчас"}

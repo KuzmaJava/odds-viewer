@@ -61,8 +61,9 @@ public final class Poller {
     Duration closeWindow() { return Times.minutes(cfg.closeWindowMin()); }
 
     // --- квота ---
-    private boolean quotaLow() {
-        String r = client.quota().get("remaining");
+    /** Квота ключа этой лиги почти исчерпана (у каждой лиги может быть свой ключ). */
+    private boolean quotaLow(String sport) {
+        String r = client.quotaFor(sport).get("remaining");
         if (r == null) return false;
         try {
             return Double.parseDouble(r) < cfg.minQuota();
@@ -71,8 +72,10 @@ public final class Poller {
         }
     }
 
-    private String quotaError() {
-        return "квота почти исчерпана (< " + cfg.minQuota() + "), платные запросы остановлены";
+    /** Ошибка «квота кончилась» — по одной на лигу, остальные лиги продолжают опрашиваться. */
+    private void quotaError(String sport, List<String> errors) {
+        String msg = sport + ": квота почти исчерпана (< " + cfg.minQuota() + "), платные запросы остановлены";
+        if (!errors.contains(msg)) errors.add(msg);
     }
 
     // --- разбор ответа ---
@@ -177,9 +180,9 @@ public final class Poller {
                     continue;
                 }
                 if (!Times.parse(raw.path("commence_time").asText()).isAfter(now)) continue;
-                if (quotaLow()) {
-                    errors.add(quotaError());
-                    return opened;
+                if (quotaLow(sport)) {
+                    quotaError(sport, errors);
+                    break;
                 }
                 try {
                     if (eventSnapshot(raw, cfg.openMarkets(), ts, "opened_at")) opened++;
@@ -197,9 +200,9 @@ public final class Poller {
         int saved = 0, opened = 0;
         List<String> polled = new ArrayList<>();
         for (String sport : leagues) {
-            if (quotaLow()) {
-                errors.add(quotaError());
-                break;
+            if (quotaLow(sport)) {
+                quotaError(sport, errors);
+                continue;
             }
             boolean firstPoll = sportLastPoll(sport) == null;
             Set<String> known = store.eventIds(sport);
@@ -215,7 +218,7 @@ public final class Poller {
                 Map<String, Price> prices = pinnacle(raw);
                 if (prices.isEmpty()) continue;
                 boolean isNew = !known.contains(raw.path("id").asText());
-                if (isNew && !firstPoll && !quotaLow()) {
+                if (isNew && !firstPoll && !quotaLow(sport)) {
                     // Линия появилась между проверками списка — снимаем открытие полным набором рынков
                     try {
                         if (eventSnapshot(raw, cfg.openMarkets(), ts, "opened_at")) {
@@ -242,9 +245,9 @@ public final class Poller {
         Set<String> tracked = Set.copyOf(sports());
         for (Store.Event ev : store.toClose(Times.iso(now), Times.iso(now.plus(closeWindow())))) {
             if (!tracked.contains(ev.sportKey)) continue;
-            if (quotaLow()) {
-                errors.add(quotaError());
-                break;
+            if (quotaLow(ev.sportKey)) {
+                quotaError(ev.sportKey, errors);
+                continue;
             }
             try {
                 if (eventSnapshot(rawOf(ev), cfg.closeMarkets(), ts, "closed_at")) closed++;
@@ -261,9 +264,9 @@ public final class Poller {
         for (Store.Event ev : store.upcoming(Times.iso(now))) {
             if (!tracked.contains(ev.sportKey) || ev.closedAt != null) continue;
             if (!force && !linesDue(ev, now)) continue;
-            if (quotaLow()) {
-                errors.add(quotaError());
-                break;
+            if (quotaLow(ev.sportKey)) {
+                quotaError(ev.sportKey, errors);
+                continue;
             }
             try {
                 if (eventSnapshot(rawOf(ev), cfg.linesMarkets(), ts, "lines_at")) taken++;
@@ -306,9 +309,9 @@ public final class Poller {
         for (String sport : sports()) {
             String reason = force ? "вручную" : leagueDue(sport, now, errors);
             if (reason == null) continue;
-            if (quotaLow()) {
-                errors.add(quotaError());
-                break;
+            if (quotaLow(sport)) {
+                quotaError(sport, errors);
+                continue;
             }
             Set<String> known = store.eventIds(sport);
             JsonNode events;
@@ -392,6 +395,16 @@ public final class Poller {
             client.quota().forEach(q::put);
             store.setSetting("quota", q);
         }
+        // Остаток по ключам лиг (если у лиг свои ключи): копим, чтобы показывать и между запусками
+        JsonNode prev = store.getSetting("quotas");
+        ObjectNode quotas = prev != null && prev.isObject() ? ((ObjectNode) prev).deepCopy() : Json.obj();
+        client.quotasByKey().forEach((label, qm) -> {
+            if (qm.get("remaining") == null) return;
+            ObjectNode q = Json.obj();
+            qm.forEach(q::put);
+            quotas.set(label, q);
+        });
+        if (!quotas.isEmpty()) store.setSetting("quotas", quotas);
         List<String> errors = new ArrayList<>();
         result.path("errors").forEach(x -> errors.add(x.asText()));
         lastError = errors.isEmpty() ? null : String.join("; ", errors);
