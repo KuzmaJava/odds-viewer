@@ -76,7 +76,19 @@ def event_movement(row: Dict[str, Any], snaps: List[Snap]) -> Dict[str, Any]:
             first.setdefault(code, (ts, v))
             last[code] = (ts, v)
             count[code] = count.get(code, 0) + 1
-    main = _main_lines({c: v for c, (_, v) in last.items()})
+    # Основная линия — по последнему снимку, где есть рынок (старые линии, которых уже нет, не считаются);
+    # на открытии — по первому такому снимку, чтобы показать сдвиг «2.25 → 2.5»
+    main: set = set()
+    open_main: Dict[str, Optional[float]] = {}
+    for a, b, _ in PAIRS:
+        snaps_with = [prices for _, prices in full if any(split_code(c)[0] == a for c in prices)]
+        if not snaps_with:
+            continue
+        pair = lambda prices: {c: v for c, v in prices.items() if split_code(c)[0] in (a, b)}  # noqa: E731
+        main |= _main_lines(pair(snaps_with[-1]))
+        pts = [split_code(c)[1] for c in _main_lines(pair(snaps_with[0])) if split_code(c)[0] == a]
+        if pts:
+            open_main[a] = pts[0]
 
     def order(code: str):
         base, point = split_code(code)
@@ -94,6 +106,7 @@ def event_movement(row: Dict[str, Any], snaps: List[Snap]) -> Dict[str, Any]:
             "code": code, "base": base, "market": market,
             "label": label if point is None else f"{label} {_fmt_point(base, point)}",
             "point": point, "main": code in main or point is None,
+            "open_main_point": open_main.get(base) if code in main and base in open_main else None,
             "opening": opening, "current": cur, "change_pct": change_pct(opening, cur),
             "open_ts": open_ts, "cur_ts": cur_ts, "n": count[code],
             "derived": open_derived or cur_derived,

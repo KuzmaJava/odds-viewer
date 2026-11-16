@@ -230,3 +230,53 @@ def test_event_removed_from_api_is_not_requested_again():
     c.calls.clear()
     p.run_cycle(now=now + timedelta(hours=13))
     assert [x for x in c.calls if x[0] == "event"] == []
+
+
+def _league_poller(c, s):
+    return Poller(c, s, default_sports=["soccer_epl"], league_mode=True, lines_far_hours=24)
+
+
+def test_league_mode_one_request_for_all_matches_keeps_quarter_main_total():
+    c, s = FlowClient(), Store(":memory:")
+    p = _league_poller(c, s)
+    now = utc_now()
+    c.league = [_raw("a", now + timedelta(days=2), _bm(total=(2.25, 1.9, 1.95), spread=None)),
+                _raw("b", now + timedelta(days=3), _bm(total=(3.0, 2.0, 1.85), spread=None))]
+    res = p.run_cycle(now=now)
+    assert [x for x in c.calls if x[0] != "events"] == [("odds", "soccer_epl", "h2h,totals")]
+    assert res["snapshots_saved"] == 2 and res["opened"] == 2
+    assert "over@2.25" in s.history("a")[0]["p"]                 # четвертную основную линию храним
+
+    # Через час никому не пора — ни одного платного запроса
+    c.calls.clear()
+    p.run_cycle(now=now + timedelta(hours=1))
+    assert [x for x in c.calls if x[0] != "events"] == []
+
+    # Через сутки — снова один запрос на всю лигу
+    p.run_cycle(now=now + timedelta(hours=24))
+    assert [x for x in c.calls if x[0] != "events"] == [("odds", "soccer_epl", "h2h,totals")]
+
+
+def test_league_mode_new_match_in_free_list_triggers_snapshot_and_line_shift_is_shown():
+    c, s = FlowClient(), Store(":memory:")
+    p = _league_poller(c, s)
+    now = utc_now()
+    c.league = [_raw("a", now + timedelta(days=2), _bm(total=(2.25, 1.9, 1.95), spread=None))]
+    p.run_cycle(now=now)
+    c.listed = [_raw("new", now + timedelta(days=4))]
+    c.league = [_raw("a", now + timedelta(days=2), _bm(total=(2.5, 2.05, 1.8), spread=None)),
+                _raw("new", now + timedelta(days=4), _bm(spread=None))]
+    res = p.run_cycle(now=now + timedelta(minutes=15))
+    assert res["opened"] == 1
+    mv = {e["id"]: e for e in movements(s)}["a"]
+    over = next(o for o in mv["outcomes"] if o["base"] == "over" and o["main"])
+    assert over["point"] == 2.5 and over["open_main_point"] == 2.25
+
+
+def test_league_mode_closing_marks_matches_near_kickoff():
+    c, s = FlowClient(), Store(":memory:")
+    p = _league_poller(c, s)
+    now = utc_now()
+    c.league = [_raw("m", now + timedelta(minutes=50), _bm(spread=None))]
+    res = p.run_cycle(now=now)
+    assert res["closed"] == 1 and s.event("m")["closed_at"]

@@ -271,6 +271,7 @@ async function loadStatus() {
   const p = st.policy;
   $("meta").textContent =
     `Лиг: ${st.tracked_sports.length} · новые матчи — каждые 15 мин` +
+    (p.league_mode ? ` · режим лиги: ${p.league_snapshot_markets === "h2h" ? "1X2" : "1X2 + основной тотал"} одним запросом на лигу` : "") +
     ` · снимки всех исходов: раз в ${p.lines_far_hours} ч, за ${p.lines_near_window_hours} ч до матча — раз в ${p.lines_near_hours} ч` +
     `, закрытие за ${Math.round(p.close_window_min || 60)} мин` +
     ` · последний снимок ${fmtDT(st.last_poll_at)} · следующий ${fmtDT(st.next_poll_at)}${q}`;
@@ -289,8 +290,15 @@ function oddCell(o, first, withLine = true) {
   const bg = ch != null && Math.abs(ch) >= 3 ? ` ${dir}-bg` : "";
   const delta = ch ? `<div class="delta ${dir}">${fmt(o.opening)} · ${fmtPct(ch)}</div>` : `<div class="delta muted">без изменений</div>`;
   return `<td class="odd num ${first ? "grp" : ""}${bg} ${o.derived ? "derived" : ""}" title="${esc(o.label)}: открытие ${fmt(o.opening)} (${fmtDT(o.open_ts)}) → сейчас ${fmt(o.current)} (${fmtDT(o.cur_ts)}), снимков ${o.n}${o.derived ? " · двойной шанс частично рассчитан из 1X2" : ""}">
-    ${withLine && o.point != null ? `<div class="pt">${fmtPt(o.base, o.point)}</div>` : ""}
+    ${withLine && o.point != null ? lineLabel(o) : ""}
     <div class="cur">${fmt(o.current)}</div>${delta}</td>`;
+}
+
+// Линия в ячейке; если основная линия сдвинулась с открытия — «2.25 → 2.5» (синим)
+function lineLabel(o) {
+  const was = o.open_main_point;
+  if (was == null || was === o.point) return `<div class="pt">${fmtPt(o.base, o.point)}</div>`;
+  return `<div class="pt moved" title="Основная линия на открытии была ${fmtPt(o.base, was)}">${fmtPt(o.base, was)} → ${fmtPt(o.base, o.point)}</div>`;
 }
 
 // Все линии рынка: строка на линию, пара исходов (ТБ/ТМ или Ф1/Ф2 с противоположной форой)

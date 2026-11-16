@@ -34,4 +34,6 @@ def build_poller(client: OddsClient, store: Store) -> Poller:
         lines_near_hours=float(os.getenv("LINES_NEAR_HOURS", "3")),
         lines_near_window_hours=float(os.getenv("LINES_NEAR_WINDOW_HOURS", "13")),
         close_window_min=float(os.getenv("CLOSE_WINDOW_MIN", "60")),
+        league_mode=os.getenv("LEAGUE_MODE", "0").strip() in ("1", "true", "yes"),
+        league_snapshot_markets=os.getenv("LEAGUE_SNAPSHOT_MARKETS") or "h2h,totals",
     )

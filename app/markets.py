@@ -157,7 +157,7 @@ def split_code(code: str) -> Tuple[str, Optional[float]]:
     return base, (float(pt) if pt else None)
 
 
-def flat_prices(bm: dict, home: str, away: str) -> Dict[str, Tuple[float, Optional[float]]]:
+def flat_prices(bm: dict, home: str, away: str, keep_quarter: bool = False) -> Dict[str, Tuple[float, Optional[float]]]:
     """Все цены одной конторы: {"home": (1.75, None), "over@2.5": (1.92, 2.5), "ah_home@-1": (2.44, -1.0), ...}.
     Тоталы и форы — все нечетвертные линии (из totals/spreads и alternate_*)."""
     markets: Dict[str, List[dict]] = {}
@@ -171,7 +171,7 @@ def flat_prices(bm: dict, home: str, away: str) -> Dict[str, Tuple[float, Option
             return
         if point is None:
             res[code] = (price, None)
-        elif not is_quarter(point):
+        elif keep_quarter or not is_quarter(point):
             point = float(point) + 0.0  # -0.0 -> 0.0
             res[line_code(code, point)] = (price, point)
 

@@ -42,7 +42,8 @@ class Poller:
                  lines_markets: str = "h2h,alternate_totals,alternate_spreads,team_totals,alternate_team_totals",
                  close_markets: str = "h2h,double_chance,alternate_totals,alternate_spreads,team_totals,alternate_team_totals",
                  lines_far_hours: float = 12, lines_near_hours: float = 3, lines_near_window_hours: float = 13,
-                 close_window_min: float = 60, cycle_seconds: int = 900):
+                 close_window_min: float = 60, cycle_seconds: int = 900,
+                 league_mode: bool = False, league_snapshot_markets: str = "h2h,totals"):
         self.client = client
         self.store = store
         self.default_sports = default_sports
@@ -59,6 +60,8 @@ class Poller:
         self.lines_near_window = timedelta(hours=lines_near_window_hours)
         self.close_window = timedelta(minutes=close_window_min)
         self.cycle_seconds = cycle_seconds
+        self.league_mode = league_mode
+        self.league_snapshot_markets = league_snapshot_markets
         self.last_error: Optional[str] = None
         self.last_result: Optional[Dict[str, Any]] = None
         self._lock = threading.RLock()
@@ -127,10 +130,10 @@ class Poller:
         return {"id": raw["id"], "sport_key": raw["sport_key"], "sport_title": raw.get("sport_title"),
                 "home": raw["home_team"], "away": raw["away_team"], "commence_time": raw["commence_time"]}
 
-    @staticmethod
-    def _pinnacle(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def _pinnacle(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         bm = next((b for b in raw.get("bookmakers") or [] if b.get("key") == BOOKMAKER), None)
-        return flat_prices(bm, raw["home_team"], raw["away_team"]) if bm else {}
+        # В режиме лиги API отдаёт одну основную линию — храним её, даже если она четвертная
+        return flat_prices(bm, raw["home_team"], raw["away_team"], keep_quarter=self.league_mode) if bm else {}
 
     def _event_snapshot(self, raw: Dict[str, Any], markets: str, ts: str, field: str) -> bool:
         """Запрос рынков одного матча; True, если Pinnacle уже дал линию (пустой ответ бесплатен)."""
@@ -318,6 +321,8 @@ class Poller:
         """Один запуск (cron каждые 15 мин): новые матчи -> новые лиги -> закрытие -> снимки по расписанию.
         force — снять все предстоящие матчи сейчас, не глядя на расписание.
         changed=False, если ничего не сохранено и нет новых ошибок — тогда коммитить нечего."""
+        if self.league_mode:
+            return self._run_league_cycle(force, now)
         with self._lock:
             now = now or utc_now()
             ts = iso(now)
@@ -334,6 +339,79 @@ class Poller:
                       "opened": opened + opened2, "closed": closed, "lines": lines, "errors": errors}
             changed = bool(polled or result["opened"] or closed or lines or
                            errors != (self.store.get_setting("last_result") or {}).get("errors"))
+            if changed:
+                self._finish(result)
+            return {**result, "changed": changed}
+
+    # --- режим «запрос по лиге»: один запрос снимает все матчи лиги (1X2 + основной тотал) ---
+    def _league_due(self, sport: str, now: datetime, errors: List[str]) -> Optional[str]:
+        """Почему пора снять лигу (или None): новая лига, новые матчи в бесплатном списке,
+        расписание какого-то матча (12 ч / за 13 ч — 3 ч) или его закрытие."""
+        if not self.sport_last_poll(sport):
+            return "новая лига"
+        try:
+            listed = self.client.events(sport)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{sport} (список матчей): {e}")
+            listed = []
+        known = self.store.event_ids(sport)
+        for raw in listed:
+            if raw["id"] in known:
+                self.store.update_commence(raw["id"], raw["commence_time"])
+            elif parse_iso(raw["commence_time"]) > now:
+                return "новые матчи"
+        for ev in self.store.upcoming(iso(now)):
+            if ev["sport_key"] != sport or ev.get("closed_at"):
+                continue
+            if parse_iso(ev["commence_time"]) - now <= self.close_window:
+                return "закрытие"
+            if self.lines_due(ev, now):
+                return "расписание"
+        return None
+
+    def _run_league_cycle(self, force: bool, now: Optional[datetime]) -> Dict[str, Any]:
+        with self._lock:
+            now = now or utc_now()
+            ts = iso(now)
+            errors: List[str] = []
+            saved, polled, opened, closed = 0, [], 0, 0
+            for sport in self.sports:
+                reason = "вручную" if force else self._league_due(sport, now, errors)
+                if not reason:
+                    continue
+                if self._quota_low():
+                    errors.append(self._quota_error())
+                    break
+                known = self.store.event_ids(sport)
+                try:
+                    events = self.client.odds(sport, markets=self.league_snapshot_markets, bookmakers=BOOKMAKER,
+                                              use_cache=False)
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"{sport}: {e}")
+                    continue
+                for raw in events:
+                    start = parse_iso(raw["commence_time"])
+                    if start <= now:
+                        continue
+                    prices = self._pinnacle(raw)
+                    if not prices:
+                        continue
+                    self.store.save_prices(self._meta(raw), ts, prices)
+                    if raw["id"] not in known:
+                        self.store.mark(raw["id"], "opened_at", ts)
+                        opened += 1
+                    self.store.mark(raw["id"], "lines_at", ts)
+                    if start - now <= self.close_window and not (self.store.event(raw["id"]) or {}).get("closed_at"):
+                        self.store.mark(raw["id"], "closed_at", ts)
+                        closed += 1
+                    saved += 1
+                self.store.set_setting(f"last_poll_at:{sport}", ts)
+                polled.append(sport)
+            if polled:
+                self.store.set_setting("last_poll_at", ts)
+            result = {"at": ts, "sports": polled, "snapshots_saved": saved, "opened": opened,
+                      "closed": closed, "lines": 0, "errors": errors}
+            changed = bool(polled or errors != (self.store.get_setting("last_result") or {}).get("errors"))
             if changed:
                 self._finish(result)
             return {**result, "changed": changed}
