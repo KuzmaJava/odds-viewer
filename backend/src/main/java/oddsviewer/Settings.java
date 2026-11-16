@@ -9,23 +9,35 @@ public record Settings(
         List<String> defaultSports, int minQuota,
         String leagueMarkets, String openMarkets, String linesMarkets, String closeMarkets,
         double linesFarHours, double linesNearHours, double linesNearWindowHours, double closeWindowMin,
-        boolean leagueMode, String leagueSnapshotMarkets) {
+        boolean leagueMode, String leagueSnapshotMarkets, Map<String, LeagueCfg> leagues) {
 
     public static final String OPEN_MARKETS = "h2h,double_chance,alternate_totals,alternate_spreads,team_totals,alternate_team_totals";
     public static final String LINES_MARKETS = "h2h,alternate_totals,alternate_spreads,team_totals,alternate_team_totals";
 
     public static Settings defaults(List<String> sports) {
-        return new Settings(sports, 10, "h2h", OPEN_MARKETS, LINES_MARKETS, OPEN_MARKETS, 12, 3, 13, 60, false, "h2h,totals");
+        return new Settings(sports, 10, "h2h", OPEN_MARKETS, LINES_MARKETS, OPEN_MARKETS, 12, 3, 13, 60, false, "h2h,totals", Map.of());
     }
 
     public Settings withLeagueMode(boolean on, double farHours) {
         return new Settings(defaultSports, minQuota, leagueMarkets, openMarkets, linesMarkets, closeMarkets,
-                farHours, linesNearHours, linesNearWindowHours, closeWindowMin, on, leagueSnapshotMarkets);
+                farHours, linesNearHours, linesNearWindowHours, closeWindowMin, on, leagueSnapshotMarkets, leagues);
     }
 
     public Settings withMinQuota(int q) {
         return new Settings(defaultSports, q, leagueMarkets, openMarkets, linesMarkets, closeMarkets,
-                linesFarHours, linesNearHours, linesNearWindowHours, closeWindowMin, leagueMode, leagueSnapshotMarkets);
+                linesFarHours, linesNearHours, linesNearWindowHours, closeWindowMin, leagueMode, leagueSnapshotMarkets, leagues);
+    }
+
+    public Settings withLeagues(Map<String, LeagueCfg> m) {
+        return new Settings(defaultSports, minQuota, leagueMarkets, openMarkets, linesMarkets, closeMarkets,
+                linesFarHours, linesNearHours, linesNearWindowHours, closeWindowMin, leagueMode, leagueSnapshotMarkets, m);
+    }
+
+    /** Настройки лиги: своя строка в LEAGUE_SETTINGS, иначе «default», иначе общие (LEAGUE_MODE). */
+    public LeagueCfg forSport(String sport) {
+        LeagueCfg c = leagues.get(sport);
+        if (c == null) c = leagues.get("default");
+        return c != null ? c : new LeagueCfg(leagueMode, List.of(), null);
     }
 
     /** TRACK_SPORTS="a,b" -> [a, b]; пусто -> null. */
@@ -47,7 +59,8 @@ public record Settings(
                 Double.parseDouble(env.getOrDefault("LINES_NEAR_WINDOW_HOURS", "13").trim()),
                 Double.parseDouble(env.getOrDefault("CLOSE_WINDOW_MIN", "60").trim()),
                 List.of("1", "true", "yes").contains(env.getOrDefault("LEAGUE_MODE", "0").trim()),
-                nonEmpty(env.get("LEAGUE_SNAPSHOT_MARKETS"), "h2h,totals"));
+                nonEmpty(env.get("LEAGUE_SNAPSHOT_MARKETS"), "h2h,totals"),
+                LeagueCfg.parse(env.get("LEAGUE_SETTINGS")));
     }
 
     private static String nonEmpty(String v, String def) {

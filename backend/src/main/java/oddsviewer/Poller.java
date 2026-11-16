@@ -55,7 +55,17 @@ public final class Poller {
 
     public String lastPollAt() { return store.getString("last_poll_at"); }
 
-    Duration far() { return Times.hours(cfg.linesFarHours()); }
+    LeagueCfg cfgFor(String sport) { return cfg.forSport(sport); }
+
+    Duration far(String sport) {
+        Double h = cfgFor(sport).farHours();
+        return Times.hours(h != null ? h : cfg.linesFarHours());
+    }
+
+    /** Рынки снимка по матчу: по точкам — без реального ДШ (экономия), иначе на открытии/закрытии — с ним. */
+    String openMarkets(String sport) { return cfgFor(sport).byPoints() ? cfg.linesMarkets() : cfg.openMarkets(); }
+
+    String closeMarkets(String sport) { return cfgFor(sport).byPoints() ? cfg.linesMarkets() : cfg.closeMarkets(); }
     Duration near() { return Times.hours(cfg.linesNearHours()); }
     Duration nearWindow() { return Times.hours(cfg.linesNearWindowHours()); }
     Duration closeWindow() { return Times.minutes(cfg.closeWindowMin()); }
@@ -89,7 +99,8 @@ public final class Poller {
         for (JsonNode bm : raw.path("bookmakers")) {
             if (BOOKMAKER.equals(bm.path("key").asText())) {
                 // В режиме лиги API отдаёт одну основную линию — храним её, даже если она четвертная
-                return Markets.flatPrices(bm, raw.path("home_team").asText(), raw.path("away_team").asText(), cfg.leagueMode());
+                boolean keepQuarter = cfgFor(raw.path("sport_key").asText()).leagueMode();
+                return Markets.flatPrices(bm, raw.path("home_team").asText(), raw.path("away_team").asText(), keepQuarter);
             }
         }
         return Map.of();
@@ -127,19 +138,47 @@ public final class Poller {
     }
 
     // --- расписание ---
-    /** Пора ли снять матч: раз в N ч, а когда до старта <= 13 ч — раз в 3 ч; за час — уже закрытие. */
+    /**
+     * Пора ли снять матч. По точкам: «за 13 ч», …, если снимка после этой точки ещё не было
+     * (промежуточные точки пропускаются, когда квоты ключа впритык — бережём закрытия).
+     * По интервалам: раз в N ч, а когда до старта <= 13 ч — раз в 3 ч. За час — уже закрытие.
+     */
     public boolean linesDue(Store.Event ev, Instant now) {
-        Duration toStart = Duration.between(now, Times.parse(ev.commenceTime));
+        Instant start = Times.parse(ev.commenceTime);
+        Duration toStart = Duration.between(now, start);
         if (toStart.compareTo(closeWindow()) <= 0 || ev.closedAt != null) return false;
         String last = firstNonNull(ev.linesAt, store.lastLinesTs(ev.id), ev.openedAt);
         if (last == null) return true;
         Instant lastDt = Times.parse(last);
+        LeagueCfg lc = cfgFor(ev.sportKey);
+        if (lc.byPoints()) {
+            for (double p : lc.points()) {
+                Instant at = start.minus(Times.hours(p));
+                if (!now.isBefore(at.minus(SLACK)) && lastDt.isBefore(at.minus(SLACK))) return !budgetTight(ev.sportKey, now);
+            }
+            return false;
+        }
         boolean isNear = toStart.compareTo(nearWindow()) <= 0;
-        if (isNear && Duration.between(lastDt, Times.parse(ev.commenceTime)).compareTo(nearWindow()) > 0) {
+        if (isNear && Duration.between(lastDt, start).compareTo(nearWindow()) > 0) {
             return true; // только что вошли в последние 13 ч
         }
-        return Duration.between(lastDt, now).compareTo((isNear ? near() : far()).minus(SLACK)) >= 0;
+        return Duration.between(lastDt, now).compareTo((isNear ? near() : far(ev.sportKey)).minus(SLACK)) >= 0;
     }
+
+    /** Квоты ключа лиги едва хватает на закрытия её предстоящих матчей — промежуточные снимки пропускаем. */
+    boolean budgetTight(String sport, Instant now) {
+        String r = client.quotaFor(sport).get("remaining");
+        if (r == null) return false;
+        long pending = store.upcoming(Times.iso(now)).stream()
+                .filter(e -> sport.equals(e.sportKey) && e.closedAt == null).count();
+        try {
+            return Double.parseDouble(r) - SNAPSHOT_COST * pending < cfg.minQuota();
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private static final int SNAPSHOT_COST = 3; // 1X2 + все тоталы + все форы
 
     /** Когда по расписанию следующий снимок матча (для статуса на сайте). */
     public Instant nextSnapshotAt(Store.Event ev, Instant now) {
@@ -148,10 +187,36 @@ public final class Poller {
         Instant closeAt = start.minus(closeWindow());
         String last = firstNonNull(ev.linesAt, store.lastLinesTs(ev.id), ev.openedAt);
         if (last == null) return now;
-        Instant lastDt = Times.parse(last), nearStart = start.minus(nearWindow());
-        Instant due = lastDt.isBefore(nearStart) ? min(lastDt.plus(far()), nearStart) : lastDt.plus(near());
+        Instant lastDt = Times.parse(last);
+        LeagueCfg lc = cfgFor(ev.sportKey);
+        Instant due;
+        if (lc.byPoints()) {
+            due = closeAt;
+            for (double p : lc.points()) {
+                Instant at = start.minus(Times.hours(p));
+                if (lastDt.isBefore(at.minus(SLACK)) && at.isBefore(due)) due = at;
+            }
+        } else {
+            Instant nearStart = start.minus(nearWindow());
+            due = lastDt.isBefore(nearStart) ? min(lastDt.plus(far(ev.sportKey)), nearStart) : lastDt.plus(near());
+        }
         Instant t = min(due, closeAt);
         return t.isBefore(now) ? now : t;
+    }
+
+    /** Для статуса: расписание по лигам, лиги с одинаковыми настройками — вместе. */
+    public String scheduleSummary() {
+        Map<String, String> titles = new java.util.HashMap<>();
+        JsonNode cat = store.getSetting("sports_catalog");
+        if (cat != null) cat.forEach(x -> titles.put(x.path("key").asText(), x.path("title").asText()));
+        Map<String, List<String>> byDesc = new java.util.LinkedHashMap<>();
+        for (String sp : sports()) {
+            byDesc.computeIfAbsent(cfgFor(sp).describe(cfg), k -> new ArrayList<>()).add(titles.getOrDefault(sp, sp));
+        }
+        if (byDesc.size() == 1) return byDesc.keySet().iterator().next();
+        List<String> parts = new ArrayList<>();
+        byDesc.forEach((desc, names) -> parts.add(String.join(", ", names) + " — " + desc));
+        return String.join("; ", parts);
     }
 
     public String nextSnapshot(Instant now) {
@@ -161,9 +226,9 @@ public final class Poller {
     }
 
     // --- полный режим ---
-    private int discover(Instant now, String ts, List<String> errors) {
+    private int discover(List<String> sports, Instant now, String ts, List<String> errors) {
         int opened = 0;
-        for (String sport : sports()) {
+        for (String sport : sports) {
             if (sportLastPoll(sport) == null) continue;
             JsonNode listed;
             try {
@@ -185,7 +250,7 @@ public final class Poller {
                     break;
                 }
                 try {
-                    if (eventSnapshot(raw, cfg.openMarkets(), ts, "opened_at")) opened++;
+                    if (eventSnapshot(raw, openMarkets(sport), ts, "opened_at")) opened++;
                 } catch (RuntimeException e) {
                     errors.add(sport + " " + teams(raw) + ": " + e.getMessage());
                 }
@@ -221,7 +286,7 @@ public final class Poller {
                 if (isNew && !firstPoll && !quotaLow(sport)) {
                     // Линия появилась между проверками списка — снимаем открытие полным набором рынков
                     try {
-                        if (eventSnapshot(raw, cfg.openMarkets(), ts, "opened_at")) {
+                        if (eventSnapshot(raw, openMarkets(sport), ts, "opened_at")) {
                             opened++;
                             continue;
                         }
@@ -240,9 +305,9 @@ public final class Poller {
         return new LeaguePoll(saved, polled, opened);
     }
 
-    private int closeLines(Instant now, String ts, List<String> errors) {
+    private int closeLines(List<String> sports, Instant now, String ts, List<String> errors) {
         int closed = 0;
-        Set<String> tracked = Set.copyOf(sports());
+        Set<String> tracked = Set.copyOf(sports);
         for (Store.Event ev : store.toClose(Times.iso(now), Times.iso(now.plus(closeWindow())))) {
             if (!tracked.contains(ev.sportKey)) continue;
             if (quotaLow(ev.sportKey)) {
@@ -250,7 +315,7 @@ public final class Poller {
                 continue;
             }
             try {
-                if (eventSnapshot(rawOf(ev), cfg.closeMarkets(), ts, "closed_at")) closed++;
+                if (eventSnapshot(rawOf(ev), closeMarkets(ev.sportKey), ts, "closed_at")) closed++;
             } catch (RuntimeException e) {
                 if (!eventGone(e, ev)) errors.add(ev.home + " — " + ev.away + " (закрытие): " + e.getMessage());
             }
@@ -258,9 +323,9 @@ public final class Poller {
         return closed;
     }
 
-    private int snapLines(Instant now, String ts, List<String> errors, boolean force) {
+    private int snapLines(List<String> sports, Instant now, String ts, List<String> errors, boolean force) {
         int taken = 0;
-        Set<String> tracked = Set.copyOf(sports());
+        Set<String> tracked = Set.copyOf(sports);
         for (Store.Event ev : store.upcoming(Times.iso(now))) {
             if (!tracked.contains(ev.sportKey) || ev.closedAt != null) continue;
             if (!force && !linesDue(ev, now)) continue;
@@ -301,12 +366,12 @@ public final class Poller {
         return null;
     }
 
-    private ObjectNode runLeagueCycle(boolean force, Instant now) {
-        String ts = Times.iso(now);
-        List<String> errors = new ArrayList<>();
+    private record Part(int saved, List<String> polled, int opened, int closed, int lines) {}
+
+    private Part leaguePart(List<String> sports, boolean force, Instant now, String ts, List<String> errors) {
         int saved = 0, opened = 0, closed = 0;
         List<String> polled = new ArrayList<>();
-        for (String sport : sports()) {
+        for (String sport : sports) {
             String reason = force ? "вручную" : leagueDue(sport, now, errors);
             if (reason == null) continue;
             if (quotaLow(sport)) {
@@ -342,11 +407,7 @@ public final class Poller {
             store.setString("last_poll_at:" + sport, ts);
             polled.add(sport);
         }
-        if (!polled.isEmpty()) store.setString("last_poll_at", ts);
-        ObjectNode result = result(ts, polled, saved, opened, closed, 0, errors);
-        boolean changed = !polled.isEmpty() || !sameErrors(errors);
-        if (changed) finish(result);
-        return result.put("changed", changed);
+        return new Part(saved, polled, opened, closed, 0);
     }
 
     // --- цикл ---
@@ -355,18 +416,28 @@ public final class Poller {
      * changed=false, если ничего не сохранено и нет новых ошибок — тогда коммитить нечего.
      */
     public ObjectNode runCycle(boolean force, Instant now) {
-        if (cfg.leagueMode()) return runLeagueCycle(force, now);
         String ts = Times.iso(now);
         List<String> errors = new ArrayList<>();
-        int opened = discover(now, ts, errors);
+        List<String> leagueSports = sports().stream().filter(sp -> cfgFor(sp).leagueMode()).toList();
+        List<String> full = sports().stream().filter(sp -> !cfgFor(sp).leagueMode()).toList();
+
+        // Полный режим: новые матчи -> новые лиги -> закрытие -> снимки по расписанию (запросы по матчу)
+        int opened = discover(full, now, ts, errors);
         // Запрос по лиге — только для только что подключённых лиг (снять всё, что уже висит)
-        List<String> first = sports().stream().filter(s -> sportLastPoll(s) == null).toList();
+        List<String> first = full.stream().filter(sp -> sportLastPoll(sp) == null).toList();
         LeaguePoll lp = first.isEmpty() ? new LeaguePoll(0, List.of(), 0) : pollLeagues(first, now, ts, errors);
-        int closed = closeLines(now, ts, errors);
-        int lines = snapLines(now, ts, errors, force);
-        if (lines > 0 || closed > 0 || opened > 0 || lp.opened() > 0) store.setString("last_poll_at", ts);
-        ObjectNode result = result(ts, lp.polled(), lp.saved(), opened + lp.opened(), closed, lines, errors);
-        boolean changed = !lp.polled().isEmpty() || opened + lp.opened() > 0 || closed > 0 || lines > 0 || !sameErrors(errors);
+        int closed = closeLines(full, now, ts, errors);
+        int lines = snapLines(full, now, ts, errors, force);
+
+        // Режим лиги: один запрос на лигу, когда хотя бы одному её матчу пора
+        Part lg = leagueSports.isEmpty() ? new Part(0, List.of(), 0, 0, 0) : leaguePart(leagueSports, force, now, ts, errors);
+
+        List<String> polled = new ArrayList<>(lp.polled());
+        polled.addAll(lg.polled());
+        int totalOpened = opened + lp.opened() + lg.opened(), totalClosed = closed + lg.closed();
+        if (lines > 0 || totalClosed > 0 || totalOpened > 0 || !polled.isEmpty()) store.setString("last_poll_at", ts);
+        ObjectNode result = result(ts, polled, lp.saved() + lg.saved(), totalOpened, totalClosed, lines, errors);
+        boolean changed = !polled.isEmpty() || totalOpened > 0 || totalClosed > 0 || lines > 0 || !sameErrors(errors);
         if (changed) finish(result);
         return result.put("changed", changed);
     }

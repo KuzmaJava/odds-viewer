@@ -26,7 +26,8 @@ public final class Export {
                 .put("league_snapshot_markets", c.leagueSnapshotMarkets())
                 .put("lines_far_hours", c.linesFarHours())
                 .put("lines_near_hours", c.linesNearHours())
-                .put("lines_near_window_hours", c.linesNearWindowHours());
+                .put("lines_near_window_hours", c.linesNearWindowHours())
+                .put("summary", p.scheduleSummary());
 
         st.put("last_poll_at", p.lastPollAt());
         st.put("next_poll_at", p.nextSnapshot(now));

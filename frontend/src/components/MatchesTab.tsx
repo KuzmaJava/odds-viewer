@@ -9,6 +9,7 @@ import { MatchDetails } from "./MatchDetails";
 import { OddCell } from "./OddCell";
 
 function scheduleText(p: Policy) {
+  if (p.summary) return `Снимки: ${p.summary}.`;
   const what = p.league_mode
     ? `1X2${p.league_snapshot_markets === "h2h" ? "" : " и основной тотал"} всех матчей лиги одним запросом`
     : "все исходы матча одним запросом (1X2, все линии тоталов и фор)";

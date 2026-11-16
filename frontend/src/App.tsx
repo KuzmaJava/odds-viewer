@@ -37,9 +37,12 @@ function metaShort(st: Status) {
 function metaText(st: Status, titles: Record<string, string>, generatedAt?: string) {
   const p = st.policy;
   const parts = [`Лиг: ${st.tracked_sports.length}`, "новые матчи — каждые 15 мин"];
-  if (p.league_mode) parts.push(`режим лиги: ${p.league_snapshot_markets === "h2h" ? "1X2" : "1X2 + основной тотал"} одним запросом на лигу`);
-  parts.push(`снимки: раз в ${p.lines_far_hours} ч, за ${p.lines_near_window_hours} ч до матча — раз в ${p.lines_near_hours} ч, ` +
-    `закрытие за ${Math.round(p.close_window_min ?? 60)} мин`);
+  if (p.summary) parts.push(`снимки: ${p.summary} (закрытие за ${Math.round(p.close_window_min ?? 60)} мин)`);
+  else {
+    if (p.league_mode) parts.push(`режим лиги: ${p.league_snapshot_markets === "h2h" ? "1X2" : "1X2 + основной тотал"} одним запросом на лигу`);
+    parts.push(`снимки: раз в ${p.lines_far_hours} ч, за ${p.lines_near_window_hours} ч до матча — раз в ${p.lines_near_hours} ч, ` +
+      `закрытие за ${Math.round(p.close_window_min ?? 60)} мин`);
+  }
   parts.push(`последний снимок ${fmtDT(st.last_poll_at)}`, `следующий ${fmtDT(st.next_poll_at)}`);
   const quota = quotaText(st, titles);
   if (quota) parts.push(quota);

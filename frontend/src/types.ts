@@ -56,6 +56,7 @@ export interface Policy {
   lines_far_hours?: number;
   lines_near_hours?: number;
   lines_near_window_hours?: number;
+  summary?: string;   // расписание по лигам одной строкой (Java-трекер)
 }
 
 export interface Status {
