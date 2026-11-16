@@ -3,6 +3,23 @@ import type { DataSource } from "../data";
 import { dispatchWorkflow, forgetToken, getToken, saveToken } from "../github";
 import type { Policy, Sport } from "../types";
 
+// Сохранённый, но ещё не применённый выбор лиг: на GitHub Pages новый список попадает в data.json
+// только после запуска workflow (1–2 мин), поэтому до тех пор показываем выбор из браузера
+const PENDING_KEY = "pending_sports";
+const PENDING_TTL_MS = 10 * 60_000;
+const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+
+function readPending(tracked: string[]): string[] | null {
+  try {
+    const p = JSON.parse(localStorage.getItem(PENDING_KEY) || "null") as { list: string[]; at: number } | null;
+    if (!p || Date.now() - p.at > PENDING_TTL_MS || sameSet(p.list, tracked)) {
+      localStorage.removeItem(PENDING_KEY);
+      return null;
+    }
+    return p.list;
+  } catch { return null; }
+}
+
 function estimate(n: number, p: Policy) {
   if (p.league_mode) {
     const per = (p.league_snapshot_markets ?? "h2h,totals").split(",").length;
@@ -19,14 +36,19 @@ export function LeaguesTab({ source, tracked, policy, onSaved }: {
   source: DataSource; tracked: string[]; policy: Policy; onSaved: () => void;
 }) {
   const [sports, setSports] = useState<Sport[] | null>(null);
-  const [checked, setChecked] = useState<Set<string>>(new Set(tracked));
-  const [hint, setHint] = useState<string | null>(null);
+  const pending = source.isStatic ? readPending(tracked) : null;
+  const [checked, setChecked] = useState<Set<string>>(new Set(pending ?? tracked));
+  const [hint, setHint] = useState<string | null>(pending ? "Сохранено, применяется — сайт обновится через 1–2 минуты." : null);
   const [busy, setBusy] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const [hasToken, setHasToken] = useState(!!getToken());
 
   useEffect(() => { source.sports().then(setSports, (e: Error) => setHint("Ошибка: " + e.message)); }, [source]);
-  useEffect(() => setChecked(new Set(tracked)), [tracked]);
+  useEffect(() => {
+    const p = source.isStatic ? readPending(tracked) : null;
+    setChecked(new Set(p ?? tracked));
+    if (!p) setHint((h) => (h?.startsWith("Сохранено, применяется") ? "Изменения применены ✓" : h));
+  }, [tracked, source]);
 
   const repo = source.site?.repo ?? null;
   const save = async () => {
@@ -36,7 +58,8 @@ export function LeaguesTab({ source, tracked, policy, onSaved }: {
     try {
       if (source.isStatic) {
         await dispatchWorkflow(repo, source.site?.ref ?? null, { sports: list.join(",") });
-        setHint(`Сохранено: запущен опрос с лигами ${list.join(", ")}. Сайт обновится примерно через 1–2 минуты.`);
+        try { localStorage.setItem(PENDING_KEY, JSON.stringify({ list, at: Date.now() })); } catch { /* ignore */ }
+        setHint("Сохранено, применяется — сайт обновится через 1–2 минуты.");
       } else {
         await source.setTracked(list);
         setHint("Сохранено ✓");
