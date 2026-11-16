@@ -5,8 +5,8 @@ import { MARKET_NAMES } from "../markets";
 import type { Market, MoveRow } from "../types";
 
 // «Просадки» и «Повышения»: исходы, сдвинувшиеся от открытия минимум на N %
-export function MovesTab({ kind, source, version, onError }: {
-  kind: "drops" | "rises"; source: DataSource; version: number; onError: (m: string) => void;
+export function MovesTab({ kind, source, version, league, onError }: {
+  kind: "drops" | "rises"; source: DataSource; version: number; league: string; onError: (m: string) => void;
 }) {
   const rising = kind === "rises";
   const [min, setMin] = useState(3);
@@ -19,7 +19,7 @@ export function MovesTab({ kind, source, version, onError }: {
     source.moves(kind, min, started).then(setRows, (e: Error) => onError(e.message));
   }, [source, version, kind, min, started, onError]);
 
-  const shown = (rows ?? []).filter((r) => !market || r.market === market);
+  const shown = (rows ?? []).filter((r) => (!market || r.market === market) && (!league || r.sport_title === league));
   return (
     <section>
       <div className="toolbar">

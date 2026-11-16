@@ -15,8 +15,8 @@ function scheduleText(p: Policy) {
     `раз в ${p.lines_near_hours ?? 3} ч, закрытие за ${Math.round(p.close_window_min ?? 60)} мин.`;
 }
 
-export function MatchesTab({ source, version, policy, onError }: {
-  source: DataSource; version: number; policy: Policy; onError: (m: string) => void;
+export function MatchesTab({ source, version, policy, league, onError }: {
+  source: DataSource; version: number; policy: Policy; league: string; onError: (m: string) => void;
 }) {
   const [started, setStarted] = useState(false);
   const [events, setEvents] = useState<EventMove[] | null>(null);
@@ -27,7 +27,7 @@ export function MatchesTab({ source, version, policy, onError }: {
   }, [source, version, started, onError]);
 
   const toggle = (id: string) => setOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const list = events ?? [];
+  const list = (events ?? []).filter((e) => !league || e.sport_title === league);
   const cols = visibleCols(list);
   const span = 3 + cols.length;
 

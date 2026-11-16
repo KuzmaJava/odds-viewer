@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { LeagueFilter } from "./components/LeagueFilter";
 import { LeaguesTab } from "./components/LeaguesTab";
 import { MatchesTab } from "./components/MatchesTab";
 import { MovesTab } from "./components/MovesTab";
@@ -43,6 +44,8 @@ function metaText(st: Status, titles: Record<string, string>, generatedAt?: stri
 
 export function App({ source }: { source: DataSource }) {
   const [tab, setTab] = useState<Tab>(savedTab);
+  const [league, setLeague] = useState<string>(() => { try { return localStorage.getItem("league") || ""; } catch { return ""; } });
+  const [leagues, setLeagues] = useState<{ title: string; count: number }[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
   const [version, setVersion] = useState(0);
   const [msg, setMsg] = useState<string | null>(null);
@@ -63,6 +66,16 @@ export function App({ source }: { source: DataSource }) {
     return () => clearInterval(id);
   }, [tab, refresh]);
   useEffect(() => { try { localStorage.setItem("tab", tab); } catch { /* ignore */ } }, [tab]);
+  useEffect(() => { try { localStorage.setItem("league", league); } catch { /* ignore */ } }, [league]);
+  // Лиги с предстоящими матчами — для переключателя
+  useEffect(() => {
+    source.events(false).then((evs) => {
+      const counts = new Map<string, number>();
+      evs.forEach((e) => counts.set(e.sport_title, (counts.get(e.sport_title) ?? 0) + 1));
+      setLeagues([...counts].map(([title, count]) => ({ title, count })).sort((a, b) => a.title.localeCompare(b.title)));
+    }, () => {});
+  }, [source, version]);
+  const leagueFilter = leagues.some((l) => l.title === league) ? league : "";
 
   const repo = source.site?.repo ?? null;
   const pollNow = async () => {
@@ -110,9 +123,10 @@ export function App({ source }: { source: DataSource }) {
       </header>
       {banners.length > 0 && <div className="banner">{banners.map((b, i) => <div key={i}>{b}</div>)}</div>}
       <main>
-        {tab === "moves" && <MatchesTab source={source} version={version} policy={status?.policy ?? {}} onError={onError} />}
-        {tab === "drops" && <MovesTab kind="drops" source={source} version={version} onError={onError} />}
-        {tab === "rises" && <MovesTab kind="rises" source={source} version={version} onError={onError} />}
+        {tab !== "leagues" && <LeagueFilter leagues={leagues} value={leagueFilter} onChange={setLeague} />}
+        {tab === "moves" && <MatchesTab source={source} version={version} policy={status?.policy ?? {}} league={leagueFilter} onError={onError} />}
+        {tab === "drops" && <MovesTab kind="drops" source={source} version={version} league={leagueFilter} onError={onError} />}
+        {tab === "rises" && <MovesTab kind="rises" source={source} version={version} league={leagueFilter} onError={onError} />}
         {tab === "leagues" && status && (
           <LeaguesTab source={source} tracked={status.tracked_sports} policy={status.policy} onSaved={refresh} />
         )}
