@@ -97,6 +97,21 @@ Pinnacle — она может быть четвертной (2.25), такие 
 `LINES_FAR_HOURS=1000` и `LINES_NEAR_HOURS=1000` (все линии только на открытии, за 13 ч и на закрытии). Список матчей и пустые ответы квоту не тратят. При остатке меньше `MIN_QUOTA_REMAINING`
 платные запросы останавливаются.
 
+## Трекер (backend/, Java 21)
+
+Опрос API и сборку `data.json` в GitHub Actions делает консольное приложение на Java 21 (Gradle, Jackson,
+`java.net.http`, без Spring). Формат `data/state.json` и `data.json` тот же, что у Python-версии (`app/`),
+которая осталась для локального сервера FastAPI.
+
+```bash
+cd backend
+./gradlew test installDist
+build/install/odds-tracker/bin/odds-tracker run   --state ../data/state.json --out ../_site --site ../frontend/dist
+build/install/odds-tracker/bin/odds-tracker build --state ../data/state.json --out ../_site --site ../frontend/dist
+```
+
+Настройки — те же переменные окружения (`ODDS_API_KEY`, `LEAGUE_MODE`, `LINES_FAR_HOURS`, …).
+
 ## Сайт (frontend/, React + TypeScript)
 
 Интерфейс — `frontend/` (Vite + React + TypeScript), собирается в статику и публикуется вместе с `data.json`.
