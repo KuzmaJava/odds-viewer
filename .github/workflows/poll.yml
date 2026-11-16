@@ -55,7 +55,7 @@ jobs:
       LEAGUE_MODE: ${{ vars.LEAGUE_MODE || '1' }}
       # Настройки по лигам: клубные лиги — все нечетвертные тоталы и форы (открытие, за 13 ч, закрытие),
       # турниры сборных и еврокубки (много матчей в одни дни) — режим лиги. Переопределяется переменной LEAGUE_SETTINGS.
-      LEAGUE_SETTINGS: ${{ vars.LEAGUE_SETTINGS || 'default: full, points 13h; soccer_uefa_nations_league: league; soccer_uefa_champs_league: league, far 24h; soccer_uefa_europa_league: league, far 24h; soccer_uefa_europa_conference_league: league, far 24h' }}
+      LEAGUE_SETTINGS: "${{ vars.LEAGUE_SETTINGS || 'default: full, points 13h; soccer_uefa_nations_league: league; soccer_uefa_champs_league: league, far 24h; soccer_uefa_europa_league: league, far 24h; soccer_uefa_europa_conference_league: league, far 24h' }}"
       LEAGUE_SNAPSHOT_MARKETS: ${{ vars.LEAGUE_SNAPSHOT_MARKETS || 'h2h,totals' }}
       LINES_FAR_HOURS: ${{ vars.LINES_FAR_HOURS || '8' }}
       LINES_NEAR_HOURS: ${{ vars.LINES_NEAR_HOURS || '3' }}
