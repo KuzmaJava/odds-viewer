@@ -36,7 +36,12 @@ def write_state(store: Store, path: Path) -> None:
 
 def build_site(poller, client, out: Path, sports) -> None:
     out.mkdir(parents=True, exist_ok=True)
-    shutil.copy(ROOT / "static" / "index.html", out / "index.html")
+    dist = ROOT / "frontend" / "dist"
+    if (dist / "index.html").exists():
+        # Сайт на React (frontend/, собирается `npm run build`); старая страница static/ — запасной вариант
+        shutil.copytree(dist, out, dirs_exist_ok=True)
+    else:
+        shutil.copy(ROOT / "static" / "index.html", out / "index.html")
     data = site_data(poller, client.demo, sports, os.getenv("GITHUB_REPOSITORY"),
                      os.getenv("DEFAULT_REF") or os.getenv("GITHUB_REF_NAME"))
     (out / "data.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")

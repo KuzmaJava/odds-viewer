@@ -97,6 +97,21 @@ Pinnacle — она может быть четвертной (2.25), такие 
 `LINES_FAR_HOURS=1000` и `LINES_NEAR_HOURS=1000` (все линии только на открытии, за 13 ч и на закрытии). Список матчей и пустые ответы квоту не тратят. При остатке меньше `MIN_QUOTA_REMAINING`
 платные запросы останавливаются.
 
+## Сайт (frontend/, React + TypeScript)
+
+Интерфейс — `frontend/` (Vite + React + TypeScript), собирается в статику и публикуется вместе с `data.json`.
+Старая страница `static/index.html` остаётся запасной: она используется, только если `frontend/dist` не собран.
+
+```bash
+cd frontend
+npm install
+npm run dev     # http://localhost:5173 — /api проксируется на локальный uvicorn (порт 8077)
+npm test        # vitest
+npm run build   # frontend/dist — его копирует `python -m app.cli build`
+```
+
+Для разработки со статическими данными положите `data.json` (например, из `_site/`) в `frontend/public/`.
+
 ## Тесты
 
 ```bash

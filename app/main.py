@@ -23,6 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
+DIST_DIR = ROOT / "frontend" / "dist"  # собранный React-сайт (npm run build); если его нет — старая страница
 
 client = build_client()
 store = Store(os.getenv("DB_PATH", str(ROOT / "data" / "odds.sqlite")))
@@ -38,11 +39,14 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Pinnacle Odds Tracker", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if (DIST_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
 
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+    page = DIST_DIR / "index.html" if (DIST_DIR / "index.html").exists() else STATIC_DIR / "index.html"
+    return FileResponse(page, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/status")
