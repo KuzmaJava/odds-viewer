@@ -112,6 +112,26 @@ build/install/odds-tracker/bin/odds-tracker build --state ../data/state.json --o
 
 Настройки — те же переменные окружения (`ODDS_API_KEY`, `LEAGUE_MODE`, `LINES_FAR_HOURS`, …).
 
+### Настройки по лигам (`LEAGUE_SETTINGS`)
+
+Переменная репозитория (Settings → Secrets and variables → Actions → Variables), по строке или через «;» на лигу:
+
+```
+default: full, points 13h
+soccer_uefa_nations_league: league
+soccer_uefa_champs_league: league, far 24h
+```
+
+- `full` — полный режим: снимок запросом по матчу, П1/X/П2 + **все нечетвертные тоталы и форы** (≈ 3 запроса);
+  `points 13h` — снимки на открытии, за 13 ч и на закрытии (≈ 9 запросов на матч: клубная лига ≈ 290–360/мес);
+  можно несколько точек: `points 13h 4h`. Без `points` — по интервалам (`LINES_FAR_HOURS`, за 13 ч — раз в 3 ч).
+- `league` — режим лиги: один запрос на всю лигу, 1X2 + основной тотал (≈ 2 запроса); `far 24h` — фоновые снимки раз в сутки.
+- `default` — для всех лиг без своей строки.
+
+Если квоты ключа лиги едва хватает на закрытия её предстоящих матчей, промежуточные точки пропускаются — закрытия
+важнее. Без переменной действует значение по умолчанию из workflow: клубные лиги — `full, points 13h`,
+Лига наций и еврокубки — `league` (еврокубки — `far 24h`).
+
 ### Отдельный ключ API на лигу
 
 Секрет `ODDS_API_KEYS` (Settings → Secrets and variables → Actions → Secrets) — по строке на лигу:
