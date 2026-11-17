@@ -42,7 +42,10 @@ class LeagueSettingsTest {
         Store s = new Store();
         Poller p = new Poller(new FakeApi(), s, settings("soccer_epl"));
         Instant kickoff = NOW.plus(Duration.ofDays(4));
-        PollerTest.eventRow(s, "m", kickoff, NOW); // открытие сейчас
+        PollerTest.eventRow(s, "m", kickoff, NOW); // открыт только 1X2 (новая лига) — линии нужны сразу
+        assertTrue(p.linesDue(s.event("m"), NOW.plus(Duration.ofMinutes(15))));
+        assertEquals(NOW, p.nextSnapshotAt(s.event("m"), NOW));
+        s.mark("m", "lines_at", Times.iso(NOW)); // открытие со всеми линиями
         assertFalse(p.linesDue(s.event("m"), NOW.plus(Duration.ofDays(2))));            // никаких «раз в N ч»
         assertFalse(p.linesDue(s.event("m"), kickoff.minus(Duration.ofHours(14))));
         assertTrue(p.linesDue(s.event("m"), kickoff.minus(Duration.ofHours(13))));

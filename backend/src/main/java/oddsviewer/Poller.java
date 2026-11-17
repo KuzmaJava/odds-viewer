@@ -152,6 +152,8 @@ public final class Poller {
         Instant lastDt = Times.parse(last);
         LeagueCfg lc = cfgFor(ev.sportKey);
         if (lc.byPoints()) {
+            // «Открытие» линий: матч открыт без тоталов и фор (новую лигу сначала снимаем запросом по лиге — там только 1X2)
+            if (!hasLines(ev)) return !budgetTight(ev.sportKey, now);
             for (double p : lc.points()) {
                 Instant at = start.minus(Times.hours(p));
                 if (!now.isBefore(at.minus(SLACK)) && lastDt.isBefore(at.minus(SLACK))) return !budgetTight(ev.sportKey, now);
@@ -159,6 +161,11 @@ public final class Poller {
             return false;
         }
         return intervalDue(ev.sportKey, start, lastDt, now);
+    }
+
+    /** Был ли у матча снимок линий тоталов и фор (или попытка, на которую Pinnacle ответил без них). */
+    private boolean hasLines(Store.Event ev) {
+        return ev.linesAt != null || store.lastLinesTs(ev.id) != null;
     }
 
     /** По интервалам: раз в N ч, а когда до старта <= 13 ч — раз в 3 ч. */
@@ -209,6 +216,7 @@ public final class Poller {
         LeagueCfg lc = cfgFor(ev.sportKey);
         Instant due;
         if (lc.byPoints()) {
+            if (!hasLines(ev)) return now;
             due = closeAt;
             for (double p : lc.points()) {
                 Instant at = start.minus(Times.hours(p));

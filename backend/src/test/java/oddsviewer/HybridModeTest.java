@@ -86,4 +86,24 @@ class HybridModeTest {
         assertTrue(p.linesDue(s.event("m"), NOW));        // точка «за 13 ч» по линиям — свой таймер
         assertFalse(p.h2hDue(s.event("m"), kickoff.minus(Duration.ofMinutes(50)))); // закрытие — не по лиге
     }
+
+    @Test
+    void newLeagueOpenedBy1x2GetsLinesOnTheSameRun() {
+        // Новая лига: первый снимок — запрос по лиге (только 1X2), сразу за ним — линии по каждому матчу
+        FakeApi api = new FakeApi();
+        Store s = new Store();
+        Poller p = poller(api, s);
+        Instant kickoff = NOW.plus(Duration.ofDays(10));
+        api.league.add(raw("m", kickoff, bm(H2H, null, null, null)));
+        api.perEvent.put("m", raw("m", kickoff, bm(null, null, new double[]{2.5, 1.95, 1.93}, new double[]{-0.5, 1.98, 1.93})));
+
+        p.runCycle(false, NOW);
+        assertTrue(api.paid().contains("event:m:" + Settings.HYBRID_LINES));
+        assertNotNull(s.event("m").linesAt);
+        assertTrue(s.history("m").toString().contains("over@2.5"));
+
+        api.calls.clear();
+        p.runCycle(false, NOW.plus(Duration.ofMinutes(15)));                       // повторно не снимаем
+        assertFalse(api.paid().contains("event:m:" + Settings.HYBRID_LINES));
+    }
 }
