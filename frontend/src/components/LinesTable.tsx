@@ -21,8 +21,8 @@ export function LinesTable({ ev, a, b, sign, title }: { ev: EventMove; a: string
           return (
             <tr key={pt} className={oa?.main || ob?.main ? "mainline" : ""}>
               <td className="num"><b>{fmtPt(a, pt)}</b>{sign < 0 ? ` / ${fmtPt(b, sign * pt + 0)}` : ""}</td>
-              <OddCell o={oa} withLine={false} />
-              <OddCell o={ob} withLine={false} />
+              <OddCell o={oa} withLine={false} ev={ev} />
+              <OddCell o={ob} withLine={false} ev={ev} />
             </tr>
           );
         })}

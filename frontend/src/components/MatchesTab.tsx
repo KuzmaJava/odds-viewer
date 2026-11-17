@@ -42,7 +42,7 @@ export function MatchesTab({ source, version, policy, league, onError }: {
           : onError("Список матчей пуст — нечего сохранять.")}>Скачать CSV</button>
         <span className="muted">
           {scheduleText(policy)} Значение — текущий коэффициент; под ним — открытие и изменение. Тотал и фора — основная линия
-          (синим — если она сдвинулась с открытия); остальное — по клику на матч. Курсив — двойной шанс, рассчитанный из 1X2.
+          (синим — если она сдвинулась с открытия); остальное — по клику на матч. Нажмите на коэффициент — исход попадёт в купон. Курсив — двойной шанс, рассчитанный из 1X2.
         </span>
       </div>
       <div className="scroll">
@@ -68,7 +68,7 @@ export function MatchesTab({ source, version, policy, league, onError }: {
                     <td className="muted">{fmtDT(ev.commence_time)}</td>
                     <td className="left"><b>{ev.home} — {ev.away}</b><div className="muted"><Flag sportKey={ev.sport_key} />{ev.sport_title}</div></td>
                     <td className="muted">{ev.snapshots}<div>с {fmtDT(ev.first_ts)}</div></td>
-                    {cols.map(([code, , m], i) => <OddCell key={code} o={by[code]} first={i === 0 || cols[i - 1][2] !== m} />)}
+                    {cols.map(([code, , m], i) => <OddCell key={code} o={by[code]} ev={ev} first={i === 0 || cols[i - 1][2] !== m} />)}
                   </tr>
                   {open.has(ev.id) && (
                     <tr className="details"><td colSpan={span}><MatchDetails ev={ev} source={source} version={version} /></td></tr>

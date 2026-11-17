@@ -4,6 +4,7 @@ import { fmt, fmtDT, fmtPct } from "../format";
 import { Flag } from "../flags";
 import { MARKET_NAMES } from "../markets";
 import type { Market, MoveRow } from "../types";
+import { PickBtn } from "./PickBtn";
 
 // «Просадки» и «Повышения»: исходы, сдвинувшиеся от открытия минимум на N %
 export function MovesTab({ kind, source, version, league, onError }: {
@@ -39,11 +40,11 @@ export function MovesTab({ kind, source, version, league, onError }: {
         <table>
           <thead><tr>
             <th>Δ</th><th>Исход</th><th className="left">Матч</th><th>Начало</th>
-            <th className="grp">Открытие</th><th>Сейчас</th><th className="grp">Отслеживается</th>
+            <th className="grp">Открытие</th><th>Сейчас</th><th className="grp">Отслеживается</th><th title="Купон" />
           </tr></thead>
           <tbody>
-            {!rows && <tr><td colSpan={7} className="empty">Загрузка…</td></tr>}
-            {rows && !shown.length && <tr><td colSpan={7} className="empty">{rising ? "Повышений" : "Просадок"} от {min}% нет</td></tr>}
+            {!rows && <tr><td colSpan={8} className="empty">Загрузка…</td></tr>}
+            {rows && !shown.length && <tr><td colSpan={8} className="empty">{rising ? "Повышений" : "Просадок"} от {min}% нет</td></tr>}
             {shown.map((r) => (
               <tr key={`${r.event_id}:${r.code}`}>
                 <td className={`pct ${cls} num`}>{fmtPct(r.change_pct)}</td>
@@ -55,6 +56,7 @@ export function MovesTab({ kind, source, version, league, onError }: {
                 <td className="num grp">{fmt(r.opening)}</td>
                 <td className={`num ${cls}`}><b>{fmt(r.current)}</b></td>
                 <td className="muted grp">с {fmtDT(r.open_ts)} · {r.snapshots} сн.</td>
+                <td><PickBtn ev={{ ...r, id: r.event_id }} o={r} /></td>
               </tr>
             ))}
           </tbody>

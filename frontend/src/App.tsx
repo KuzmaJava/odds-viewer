@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
+import { CouponTab } from "./components/CouponTab";
 import { LeagueFilter } from "./components/LeagueFilter";
 import { LeaguesTab } from "./components/LeaguesTab";
 import { MatchesTab } from "./components/MatchesTab";
 import { MovesTab } from "./components/MovesTab";
+import { useCoupon } from "./coupon";
 import type { DataSource } from "./data";
 import { fmtDT } from "./format";
 import { dispatchWorkflow, getToken } from "./github";
 import type { Status } from "./types";
 
-type Tab = "moves" | "drops" | "rises" | "leagues";
-const TABS: [Tab, string][] = [["moves", "Матчи"], ["drops", "Просадки"], ["rises", "Повышения"], ["leagues", "Лиги"]];
+type Tab = "moves" | "drops" | "rises" | "coupon" | "leagues";
+const TABS: [Tab, string][] = [["moves", "Матчи"], ["drops", "Просадки"], ["rises", "Повышения"], ["coupon", "Купон"], ["leagues", "Лиги"]];
 const REFRESH_MS = 60_000; // перечитываем data.json / API раз в минуту — квоту это не тратит
 
 function savedTab(): Tab {
@@ -58,6 +60,7 @@ export function App({ source }: { source: DataSource }) {
   const [version, setVersion] = useState(0);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const picks = useCoupon();
 
   const onError = useCallback((m: string) => setMsg(m), []);
   const refresh = useCallback(async () => {
@@ -118,7 +121,9 @@ export function App({ source }: { source: DataSource }) {
         <h1>Pinnacle · движение линии</h1>
         <nav>
           {TABS.map(([k, title]) => (
-            <button key={k} className={tab === k ? "active" : ""} onClick={() => { setMsg(null); setTab(k); }}>{title}</button>
+            <button key={k} className={tab === k ? "active" : ""} onClick={() => { setMsg(null); setTab(k); }}>
+              {title}{k === "coupon" && picks.length > 0 && <span className="badge">{picks.length}</span>}
+            </button>
           ))}
         </nav>
         <div className="spacer" />
@@ -142,10 +147,11 @@ export function App({ source }: { source: DataSource }) {
       </header>
       {banners.length > 0 && <div className="banner">{banners.map((b, i) => <div key={i}>{b}</div>)}</div>}
       <main>
-        {tab !== "leagues" && <LeagueFilter leagues={leagues} value={leagueFilter} onChange={setLeague} />}
+        {tab !== "leagues" && tab !== "coupon" && <LeagueFilter leagues={leagues} value={leagueFilter} onChange={setLeague} />}
         {tab === "moves" && <MatchesTab source={source} version={version} policy={status?.policy ?? {}} league={leagueFilter} onError={onError} />}
         {tab === "drops" && <MovesTab kind="drops" source={source} version={version} league={leagueFilter} onError={onError} />}
         {tab === "rises" && <MovesTab kind="rises" source={source} version={version} league={leagueFilter} onError={onError} />}
+        {tab === "coupon" && <CouponTab source={source} version={version} onError={onError} />}
         {tab === "leagues" && status && (
           <LeaguesTab source={source} tracked={status.tracked_sports} policy={status.policy} onSaved={refresh} />
         )}

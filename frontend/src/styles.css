@@ -92,7 +92,23 @@ tr.mainline td:first-child { box-shadow: inset 3px 0 var(--accent); }
   header.top > .meta { display: block; background: var(--panel); padding: 8px 14px; }
   header.top > .pollBtn { margin: 0 14px 8px; }
   .metaFull { display: none; }
+  .wideOnly { display: none; }
+  .narrowOnly { display: revert !important; }
+  table.coupon td:first-child { white-space: normal; min-width: 120px; max-width: 150px; }
+  table.coupon td, table.coupon th { padding-left: 6px; padding-right: 6px; }
   .metaShort { display: block; }
   main { padding: 12px 10px 40px; }
   .banner { margin: 10px 10px 0; }
 }
+
+/* Купон */
+td.odd.pickable { cursor: pointer; }
+td.odd.pickable:hover { box-shadow: inset 0 0 0 1px var(--accent); }
+td.odd.picked { box-shadow: inset 0 0 0 2px var(--accent); }
+td.odd.picked .cur::after { content: " ✓"; color: var(--accent); }
+.badge { display: inline-block; margin-left: 5px; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent);
+  color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+.pickBtn { padding: 2px 9px; font-weight: 700; color: var(--muted); }
+.pickBtn.on { border-color: var(--accent); color: var(--accent); }
+tr.total td { border-top: 2px solid var(--line); background: var(--bg); }
+.narrowOnly { display: none; }
