@@ -148,7 +148,7 @@ export function App({ source }: { source: DataSource }) {
       {banners.length > 0 && <div className="banner">{banners.map((b, i) => <div key={i}>{b}</div>)}</div>}
       <main>
         {tab !== "leagues" && tab !== "coupon" && <LeagueFilter leagues={leagues} value={leagueFilter} onChange={setLeague} />}
-        {tab === "moves" && <MatchesTab source={source} version={version} policy={status?.policy ?? {}} league={leagueFilter} onError={onError} />}
+        {tab === "moves" && <MatchesTab source={source} version={version} policy={status?.policy ?? {}} status={status} league={leagueFilter} onError={onError} />}
         {tab === "drops" && <MovesTab kind="drops" source={source} version={version} league={leagueFilter} onError={onError} />}
         {tab === "rises" && <MovesTab kind="rises" source={source} version={version} league={leagueFilter} onError={onError} />}
         {tab === "coupon" && <CouponTab source={source} version={version} onError={onError} />}

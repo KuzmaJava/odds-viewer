@@ -112,3 +112,21 @@ td.odd.picked .cur::after { content: " ✓"; color: var(--accent); }
 .pickBtn.on { border-color: var(--accent); color: var(--accent); }
 tr.total td { border-top: 2px solid var(--line); background: var(--bg); }
 .narrowOnly { display: none; }
+
+/* Расписание обновлений по лигам */
+details.schedule { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
+details.schedule > summary { cursor: pointer; font-weight: 600; }
+details.schedule table { margin: 8px 0 6px; }
+details.schedule td { white-space: nowrap; }
+@media (max-width: 700px) {
+  details.schedule { padding: 8px; }
+  /* Телефон: строка лиги — карточка «1X2 / Линии / Закрытие» */
+  table.sched thead { display: none; }
+  table.sched, table.sched tbody, table.sched tr, table.sched td { display: block; width: 100%; box-sizing: border-box; }
+  table.sched tr { border-bottom: 1px solid var(--line); padding: 6px 0; }
+  table.sched td { border: none; padding: 2px 4px; text-align: left; white-space: normal; font-size: 13px; }
+  table.sched td.league { font-weight: 600; }
+  table.sched td.league .muted { display: inline; font-weight: 400; margin-left: 6px; }
+  table.sched td[data-label]::before { content: attr(data-label); display: inline-block; width: 70px; color: var(--muted); font-size: 12px; }
+  table.sched td[data-label] > .muted:last-child:not(.rel) { margin-left: 70px; }
+}

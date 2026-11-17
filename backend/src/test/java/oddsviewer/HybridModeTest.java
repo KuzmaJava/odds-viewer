@@ -106,4 +106,20 @@ class HybridModeTest {
         p.runCycle(false, NOW.plus(Duration.ofMinutes(15)));                       // повторно не снимаем
         assertFalse(api.paid().contains("event:m:" + Settings.HYBRID_LINES));
     }
+
+    @Test
+    void leagueScheduleShowsNext1x2LinesPointAndClosing() {
+        Store s = new Store();
+        Poller p = poller(new FakeApi(), s);
+        Instant kickoff = NOW.plus(Duration.ofDays(3));
+        known(s, kickoff, NOW);
+        var row = p.leagueSchedule(NOW.plus(Duration.ofHours(1))).get(0);
+        assertEquals("soccer_epl", row.path("sport").asText());
+        assertEquals(1, row.path("matches").asInt());
+        assertEquals(Times.iso(NOW.plus(Duration.ofHours(12))), row.path("h2h_at").asText());     // 1X2 раз в 12 ч
+        assertEquals(Times.iso(kickoff.minus(Duration.ofHours(24))), row.path("lines_at").asText());
+        assertEquals("за 24 ч", row.path("lines_point").asText());
+        assertEquals("Kosovo — Israel", row.path("lines_match").asText());
+        assertEquals(Times.iso(kickoff.minus(Duration.ofHours(1))), row.path("close_at").asText());
+    }
 }

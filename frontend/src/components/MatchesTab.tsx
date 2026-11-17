@@ -3,8 +3,9 @@ import { downloadCsv, movesCsv } from "../csv";
 import type { DataSource } from "../data";
 import { fmtDT, localDT } from "../format";
 import { MARKET_NAMES, mainByBase, visibleCols } from "../markets";
-import type { EventMove, Policy } from "../types";
+import type { EventMove, Policy, Status } from "../types";
 import { Flag } from "../flags";
+import { LeagueSchedule } from "./LeagueSchedule";
 import { MatchDetails } from "./MatchDetails";
 import { OddCell } from "./OddCell";
 
@@ -17,8 +18,8 @@ function scheduleText(p: Policy) {
     `раз в ${p.lines_near_hours ?? 3} ч, закрытие за ${Math.round(p.close_window_min ?? 60)} мин.`;
 }
 
-export function MatchesTab({ source, version, policy, league, onError }: {
-  source: DataSource; version: number; policy: Policy; league: string; onError: (m: string) => void;
+export function MatchesTab({ source, version, policy, status, league, onError }: {
+  source: DataSource; version: number; policy: Policy; status: Status | null; league: string; onError: (m: string) => void;
 }) {
   const [started, setStarted] = useState(false);
   const [events, setEvents] = useState<EventMove[] | null>(null);
@@ -35,6 +36,10 @@ export function MatchesTab({ source, version, policy, league, onError }: {
 
   return (
     <section>
+      {status?.schedule && (
+        <LeagueSchedule rows={status.schedule} league={league}
+          titles={Object.fromEntries((source.site?.sports ?? []).map((x) => [x.key, x.title]))} />
+      )}
       <div className="toolbar">
         <label><input type="checkbox" checked={started} onChange={(e) => setStarted(e.target.checked)} /> показывать начавшиеся</label>
         <button title="Скачать текущий список матчей в CSV" onClick={() => list.length

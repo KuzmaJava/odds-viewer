@@ -31,6 +31,7 @@ public final class Export {
 
         st.put("last_poll_at", p.lastPollAt());
         st.put("next_poll_at", p.nextSnapshot(now));
+        st.set("schedule", p.leagueSchedule(now));
         JsonNode lastResult = p.lastResult != null ? p.lastResult : p.store.getSetting("last_result");
         st.set("last_result", lastResult == null ? Json.F.nullNode() : lastResult);
         List<String> errors = new ArrayList<>();

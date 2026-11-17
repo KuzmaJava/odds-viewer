@@ -67,7 +67,20 @@ export interface Status {
   next_poll_at: string | null;
   last_error: string | null;
   quota: Quota;
-  quotas?: Record<string, Quota>;   // по ключам: "default" или ключ лиги (если у лиг свои ключи API)
+  quotas?: Record<string, Quota>;
+  schedule?: LeagueSchedule[];      // ближайшие обновления по лигам (Java-трекер)   // по ключам: "default" или ключ лиги (если у лиг свои ключи API)
+}
+
+// Когда у лиги по расписанию обновятся коэффициенты
+export interface LeagueSchedule {
+  sport: string;
+  matches: number;              // предстоящих матчей без закрытия
+  h2h_at: string | null;        // 1X2 запросом по лиге
+  lines_at: string | null;      // все тоталы и форы по матчу
+  lines_point: string | null;   // "открытие", "за 24 ч", …
+  lines_match: string | null;
+  close_at: string | null;      // закрытие (за час до старта)
+  close_match: string | null;
 }
 
 export interface Quota { remaining?: string | null; used?: string | null; last_cost?: string | null }

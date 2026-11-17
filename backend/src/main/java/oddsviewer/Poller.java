@@ -248,6 +248,76 @@ public final class Poller {
         return String.join("; ", parts);
     }
 
+    /**
+     * Для сайта: когда у каждой лиги ближайшие обновления коэффициентов по расписанию —
+     * 1X2 запросом по лиге, линии тоталов и фор (какой матч, какая точка) и закрытие.
+     * Время — по расписанию; прогон идёт каждые 15 мин, так что снимок будет в ближайший после него прогон.
+     */
+    public ArrayNode leagueSchedule(Instant now) {
+        ArrayNode out = Json.arr();
+        List<Store.Event> upcoming = store.upcoming(Times.iso(now));
+        for (String sport : sports()) {
+            LeagueCfg lc = cfgFor(sport);
+            ObjectNode row = out.addObject().put("sport", sport);
+            Instant h2h = null, lines = null, close = null;
+            Store.Event linesEv = null, closeEv = null;
+            String linesWhat = null;
+            int matches = 0;
+            for (Store.Event ev : upcoming) {
+                if (!sport.equals(ev.sportKey) || ev.closedAt != null) continue;
+                matches++;
+                Instant start = Times.parse(ev.commenceTime), closeAt = start.minus(closeWindow());
+                Instant c = closeAt.isBefore(now) ? now : closeAt;
+                if (close == null || c.isBefore(close)) { close = c; closeEv = ev; }
+                if (!closeAt.isAfter(now)) continue;
+                // 1X2 по лиге (гибрид) / снимок лиги (режим лиги)
+                if (lc.hybrid() || lc.leagueMode()) {
+                    String last = lc.hybrid() ? firstNonNull(ev.h2hAt, ev.linesAt, store.lastLinesTs(ev.id), ev.openedAt)
+                            : firstNonNull(ev.linesAt, ev.openedAt);
+                    Instant t = last == null ? now : intervalNext(sport, start, Times.parse(last));
+                    if (t.isBefore(closeAt)) {
+                        t = t.isBefore(now) ? now : t;
+                        if (h2h == null || t.isBefore(h2h)) h2h = t;
+                    }
+                }
+                if (lc.leagueMode()) continue;
+                // Линии по матчу
+                Instant t = null;
+                String what = null;
+                if (lc.byPoints()) {
+                    if (!hasLines(ev)) { t = now; what = "открытие"; }
+                    else {
+                        Instant lastDt = Times.parse(firstNonNull(ev.linesAt, store.lastLinesTs(ev.id)));
+                        for (double pt : lc.points()) {
+                            Instant at = start.minus(Times.hours(pt));
+                            if (lastDt.isBefore(at.minus(SLACK)) && at.isBefore(closeAt) && (t == null || at.isBefore(t))) {
+                                t = at;
+                                what = "за " + Json.g(pt) + " ч";
+                            }
+                        }
+                    }
+                } else {
+                    String last = firstNonNull(ev.linesAt, store.lastLinesTs(ev.id), ev.openedAt);
+                    t = last == null ? now : intervalNext(sport, start, Times.parse(last));
+                    what = "по интервалу";
+                    if (!t.isBefore(closeAt)) t = null;
+                }
+                if (t != null) {
+                    t = t.isBefore(now) ? now : t;
+                    if (lines == null || t.isBefore(lines)) { lines = t; linesEv = ev; linesWhat = what; }
+                }
+            }
+            row.put("matches", matches);
+            row.put("h2h_at", h2h == null ? null : Times.iso(h2h));
+            row.put("lines_at", lines == null ? null : Times.iso(lines));
+            row.put("lines_point", linesWhat);
+            row.put("lines_match", linesEv == null ? null : linesEv.home + " — " + linesEv.away);
+            row.put("close_at", close == null ? null : Times.iso(close));
+            row.put("close_match", closeEv == null ? null : closeEv.home + " — " + closeEv.away);
+        }
+        return out;
+    }
+
     public String nextSnapshot(Instant now) {
         Set<String> tracked = Set.copyOf(sports());
         return store.upcoming(Times.iso(now)).stream().filter(e -> tracked.contains(e.sportKey))
