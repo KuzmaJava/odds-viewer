@@ -122,4 +122,19 @@ class HybridModeTest {
         assertEquals("Kosovo — Israel", row.path("lines_match").asText());
         assertEquals(Times.iso(kickoff.minus(Duration.ofHours(1))), row.path("close_at").asText());
     }
+
+    @Test
+    void linesNowTakesLinesOfOneLeagueOnly() {
+        FakeApi api = new FakeApi();
+        Store s = new Store();
+        Poller p = poller(api, s);
+        Instant kickoff = NOW.plus(Duration.ofDays(4));
+        known(s, kickoff, NOW);
+        api.perEvent.put("m", raw("m", kickoff, bm(null, null, new double[]{2.5, 1.95, 1.93}, null)));
+
+        p.runCycle(false, NOW.plus(Duration.ofHours(1)), java.util.Set.of("soccer_spain_la_liga"));
+        assertEquals(List.of(), api.paid());                                      // другая лига — ничего
+        p.runCycle(false, NOW.plus(Duration.ofHours(1)), java.util.Set.of("soccer_epl"));
+        assertEquals(List.of("event:m:" + Settings.HYBRID_LINES), api.paid());    // только линии, без 1X2 по лиге
+    }
 }

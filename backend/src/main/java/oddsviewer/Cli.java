@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.TreeSet;
 import java.util.function.Function;
@@ -44,7 +45,7 @@ public final class Cli {
     }
 
     static int run(String[] args, Map<String, String> env, Instant now) {
-        String command = null, state = "data/state.json", out = "_site", site = "frontend/dist", sportsArg = "";
+        String command = null, state = "data/state.json", out = "_site", site = "frontend/dist", sportsArg = "", linesNowArg = "";
         boolean force = false;
         List<String> a = new ArrayList<>(Arrays.asList(args));
         for (int i = 0; i < a.size(); i++) {
@@ -54,6 +55,7 @@ public final class Cli {
                 case "--out" -> out = a.get(++i);
                 case "--site" -> site = a.get(++i);
                 case "--sports" -> sportsArg = a.get(++i);
+                case "--lines-now" -> linesNowArg = a.get(++i);
                 case "run", "build", "normalize" -> command = a.get(i);
                 default -> {
                     System.err.println("Неизвестный аргумент: " + a.get(i));
@@ -62,7 +64,7 @@ public final class Cli {
             }
         }
         if (command == null) {
-            System.err.println("Использование: odds-tracker run|build [--force] [--sports a,b] [--state ...] [--out ...] [--site ...]");
+            System.err.println("Использование: odds-tracker run|build [--force] [--sports a,b] [--lines-now a,b] [--state ...] [--out ...] [--site ...]");
             return 2;
         }
 
@@ -101,7 +103,8 @@ public final class Cli {
             }
             System.out.println("Отслеживаемые лиги: " + poller.sports() + "; следующий снимок по расписанию: "
                     + (poller.nextSnapshot(now) == null ? "нет" : poller.nextSnapshot(now)));
-            ObjectNode result = poller.runCycle(force, now);
+            List<String> linesNow = parseSports(linesNowArg);
+            ObjectNode result = poller.runCycle(force, now, linesNow == null ? Set.of() : Set.copyOf(linesNow));
             System.out.println(Json.py(result, false));
             if (result.path("sports").size() > 0 || sports == null) {
                 try { // список лиг — бесплатный запрос, нужен странице для вкладки «Лиги»

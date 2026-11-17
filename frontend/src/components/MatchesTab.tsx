@@ -37,7 +37,7 @@ export function MatchesTab({ source, version, policy, status, league, onError }:
   return (
     <section>
       {status?.schedule && (
-        <LeagueSchedule rows={status.schedule} league={league}
+        <LeagueSchedule rows={status.schedule} league={league} source={source}
           titles={Object.fromEntries((source.site?.sports ?? []).map((x) => [x.key, x.title]))} />
       )}
       <div className="toolbar">

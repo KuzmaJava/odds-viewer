@@ -130,3 +130,5 @@ details.schedule td { white-space: nowrap; }
   table.sched td[data-label]::before { content: attr(data-label); display: inline-block; width: 70px; color: var(--muted); font-size: 12px; }
   table.sched td[data-label] > .muted:last-child:not(.rel) { margin-left: 70px; }
 }
+.linesNow { display: block; margin-top: 4px; }
+@media (max-width: 700px) { table.sched td.league .linesNow { display: block; margin: 4px 0 2px; font-weight: 400; } }

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import type { DataSource } from "../data";
 import { Flag } from "../flags";
+import { dispatchWorkflow, getToken } from "../github";
 import { fmtDT } from "../format";
 import type { LeagueSchedule as Row } from "../types";
 
@@ -23,7 +25,24 @@ function When({ at, sub, label }: { at: string | null; sub?: string | null; labe
 }
 
 // Ближайшие обновления коэффициентов по каждой лиге. Без выбранной лиги — все, с выбранной — только она.
-export function LeagueSchedule({ rows, titles, league }: { rows: Row[]; titles: Record<string, string>; league: string }) {
+export function LeagueSchedule({ rows, titles, league, source }: {
+  rows: Row[]; titles: Record<string, string>; league: string; source: DataSource;
+}) {
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  // Кнопка «снять линии сейчас» — только на GitHub Pages и с сохранённым токеном (как «Опросить сейчас»)
+  const canPoll = source.isStatic && !!source.site?.repo && !!getToken();
+  const linesNow = async (r: Row) => {
+    const title = titles[r.sport] ?? r.sport;
+    if (!confirm(`Снять все тоталы и форы ${title} сейчас, вне расписания? Это ≈ ${2 * r.matches} запросов квоты лиги ` +
+      `(${r.matches} матч., по 2 на матч). Расписание после этого не сбивается.`)) return;
+    setBusy(r.sport);
+    try {
+      await dispatchWorkflow(source.site!.repo, source.site!.ref ?? null, { lines_now: r.sport });
+      setMsg(`${title}: снимок линий запущен, сайт обновится примерно через 1–2 минуты.`);
+    } catch (e) { setMsg("Не удалось запустить: " + (e as Error).message); }
+    finally { setBusy(null); }
+  };
   const [open, setOpen] = useState(() => { try { return localStorage.getItem("schedule_open") !== "0"; } catch { return true; } });
   const [, tick] = useState(0);
   useEffect(() => { const id = setInterval(() => tick((x) => x + 1), 60_000); return () => clearInterval(id); }, []);
@@ -44,7 +63,13 @@ export function LeagueSchedule({ rows, titles, league }: { rows: Row[]; titles: 
             {list.map((r) => (
               <tr key={r.sport}>
                 <td className="left league"><Flag sportKey={r.sport} />{titles[r.sport] ?? r.sport}
-                  <div className="muted">{r.matches ? `матчей впереди: ${r.matches}` : "матчей пока нет"}</div></td>
+                  <div className="muted">{r.matches ? `матчей впереди: ${r.matches}` : "матчей пока нет"}</div>
+                  {canPoll && r.matches > 0 && (
+                    <button className="histBtn linesNow" disabled={busy !== null} onClick={() => linesNow(r)}
+                      title="Внеплановый снимок всех тоталов и фор матчей этой лиги">
+                      {busy === r.sport ? "Запускаю…" : "Снять линии сейчас"}
+                    </button>
+                  )}</td>
                 <When label="1X2" at={r.h2h_at} />
                 <When label="Линии" at={r.lines_at} sub={r.lines_match && `${r.lines_match}${r.lines_point ? ` · ${r.lines_point}` : ""}`} />
                 <When label="Закрытие" at={r.close_at} sub={r.close_match} />
@@ -53,6 +78,7 @@ export function LeagueSchedule({ rows, titles, league }: { rows: Row[]; titles: 
           </tbody>
         </table>
       </div>
+      {msg && <div className="banner" style={{ margin: "6px 0" }}>{msg}</div>}
       <div className="muted">
         Время — по расписанию; снимок делается в ближайший прогон после него (прогоны каждые 15 мин). Новые матчи
         Pinnacle проверяются каждые 15 мин и снимаются сразу при появлении.

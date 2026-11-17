@@ -422,12 +422,12 @@ public final class Poller {
         return closed;
     }
 
-    private int snapLines(List<String> sports, Instant now, String ts, List<String> errors, boolean force) {
+    private int snapLines(List<String> sports, Instant now, String ts, List<String> errors, boolean force, Set<String> linesNow) {
         int taken = 0;
         Set<String> tracked = Set.copyOf(sports);
         for (Store.Event ev : store.upcoming(Times.iso(now))) {
             if (!tracked.contains(ev.sportKey) || ev.closedAt != null) continue;
-            if (!force && !linesDue(ev, now)) continue;
+            if (!force && !linesNow.contains(ev.sportKey) && !linesDue(ev, now)) continue;
             if (quotaLow(ev.sportKey)) {
                 quotaError(ev.sportKey, errors);
                 continue;
@@ -528,6 +528,11 @@ public final class Poller {
      * changed=false, если ничего не сохранено и нет новых ошибок — тогда коммитить нечего.
      */
     public ObjectNode runCycle(boolean force, Instant now) {
+        return runCycle(force, now, Set.of());
+    }
+
+    /** linesNow — лиги, по матчам которых снять все тоталы и форы сейчас, вне расписания (кнопка на сайте). */
+    public ObjectNode runCycle(boolean force, Instant now, Set<String> linesNow) {
         String ts = Times.iso(now);
         List<String> errors = new ArrayList<>();
         List<String> leagueSports = sports().stream().filter(sp -> cfgFor(sp).leagueMode() || cfgFor(sp).hybrid()).toList();
@@ -539,7 +544,7 @@ public final class Poller {
         List<String> first = full.stream().filter(sp -> sportLastPoll(sp) == null).toList();
         LeaguePoll lp = first.isEmpty() ? new LeaguePoll(0, List.of(), 0) : pollLeagues(first, now, ts, errors);
         int closed = closeLines(full, now, ts, errors);
-        int lines = snapLines(full, now, ts, errors, force);
+        int lines = snapLines(full, now, ts, errors, force, linesNow);
 
         // Режим лиги: один запрос на лигу, когда хотя бы одному её матчу пора
         Part lg = leagueSports.isEmpty() ? new Part(0, List.of(), 0, 0, 0) : leaguePart(leagueSports, force, now, ts, errors);

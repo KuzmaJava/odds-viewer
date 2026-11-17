@@ -25,6 +25,10 @@ on:
         description: "Новый список лиг через запятую (обычно задаётся с сайта, вкладка «Лиги»). Пусто — без изменений"
         type: string
         default: ""
+      lines_now:
+        description: "Лиги через запятую: снять все тоталы и форы их матчей сейчас (2 запроса на матч). Пусто — нет"
+        type: string
+        default: ""
   push:
     branches: [main, master]
     paths: ["static/**", "app/**", "frontend/**", "backend/**", ".github/workflows/poll.yml", "data/state.json"]  # пуши бота сюда не попадают (GITHUB_TOKEN не запускает workflow)
@@ -100,14 +104,15 @@ jobs:
           EVENT: ${{ github.event_name }}
           FORCE: ${{ inputs.force }}
           SPORTS_INPUT: ${{ inputs.sports }}
+          LINES_NOW: ${{ inputs.lines_now }}
         run: |
           TRACKER=backend/build/install/odds-tracker/bin/odds-tracker
           if [ "$EVENT" = "push" ]; then
             $TRACKER build
           elif [ "$FORCE" = "true" ]; then
-            $TRACKER run --force --sports "$SPORTS_INPUT"
+            $TRACKER run --force --sports "$SPORTS_INPUT" --lines-now "$LINES_NOW"
           else
-            $TRACKER run --sports "$SPORTS_INPUT"
+            $TRACKER run --sports "$SPORTS_INPUT" --lines-now "$LINES_NOW"
           fi
 
       - name: Commit state
