@@ -100,6 +100,7 @@ public final class Cli {
             if (client instanceof KeyRouter router) {
                 List<String> noKey = poller.sports().stream().filter(sp -> !router.hasKeyFor(sp)).toList();
                 if (!noKey.isEmpty()) System.err.println("Нет ключа API для лиг: " + noKey + " — они пропускаются");
+                System.out.println("Свои ключи (ODDS_API_KEYS): " + router.ownKeySports() + "; остальные лиги — общим ODDS_API_KEY");
             }
             System.out.println("Отслеживаемые лиги: " + poller.sports() + "; следующий снимок по расписанию: "
                     + (poller.nextSnapshot(now) == null ? "нет" : poller.nextSnapshot(now)));

@@ -85,6 +85,9 @@ public final class Poller {
     /** Ошибка «квота кончилась» — по одной на лигу, остальные лиги продолжают опрашиваться. */
     private void quotaError(String sport, List<String> errors) {
         String msg = sport + ": квота почти исчерпана (< " + cfg.minQuota() + "), платные запросы остановлены";
+        if (client instanceof KeyRouter r && !r.hasOwnKey(sport)) {
+            msg += " — своего ключа в ODDS_API_KEYS у лиги нет (или он совпадает с общим), запросы идут общим ODDS_API_KEY";
+        }
         if (!errors.contains(msg)) errors.add(msg);
     }
 

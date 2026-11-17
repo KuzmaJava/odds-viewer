@@ -28,8 +28,17 @@ class KeyRouterTest {
                 soccer_spain_la_liga=BBB, soccer_italy_serie_a=CCC
                 """);
         assertEquals(Map.of("soccer_epl", "AAA", "soccer_spain_la_liga", "BBB", "soccer_italy_serie_a", "CCC"), keys);
-        assertThrows(IllegalArgumentException.class, () -> KeyRouter.parseKeys("soccer_epl"));
-        assertThrows(IllegalArgumentException.class, () -> KeyRouter.parseKeys("Bad League=AAA"));
+        // пары через пробел / табуляцию / CRLF, кавычки и пробелы вокруг «=» — частые ошибки при вставке в секрет
+        var spaced = KeyRouter.parseKeys("soccer_portugal_primeira_liga=AAA1 soccer_uefa_champs_league=BBB2\r\n"
+                + "\tsoccer_uefa_europa_league = \"CCC3\"  # ЛЕ");
+        assertEquals(java.util.Map.of("soccer_portugal_primeira_liga", "AAA1", "soccer_uefa_champs_league", "BBB2",
+                "soccer_uefa_europa_league", "CCC3"), spaced);
+        // неразрывный пробел в конце ключа и строки, разделённые только \r или U+2028
+        assertEquals(java.util.Map.of("soccer_portugal_primeira_liga", "AAA1", "soccer_uefa_champs_league", "BBB2"),
+                KeyRouter.parseKeys("soccer_portugal_primeira_liga=AAA1\u00A0\rsoccer_uefa_champs_league=BBB2\u2028"));
+        assertEquals(java.util.Map.of("soccer_epl", "OK1"), KeyRouter.parseKeys("soccer_epl=OK1\nsoccer_spl=AA-B!"));
+        assertEquals(java.util.Map.of(), KeyRouter.parseKeys("soccer_epl"));             // без «=» — пропуск
+        assertEquals(java.util.Map.of(), KeyRouter.parseKeys("Bad-League=AAA"));
     }
 
     @Test
