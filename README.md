@@ -144,7 +144,8 @@ soccer_uefa_champs_league: league, far 24h
 
 1. Telegram → @BotFather → `/newbot` → токен.
 2. Написать боту `/start` (или добавить бота администратором в канал).
-3. Secrets: `TELEGRAM_BOT_TOKEN` — токен; `TELEGRAM_CHAT_ID` — номер чата или `@имя_канала`.
+3. Secrets: `TELEGRAM_BOT_TOKEN` — токен; `TELEGRAM_CHAT_ID` — номер чата или `@имя_канала`, можно несколько
+   через запятую (например, личный чат и канал: `123456789,@my_channel`).
    Номер чата: задайте сначала только токен и напишите боту `/start` — в ближайший прогон (до 15 мин) бот сам
    пришлёт вам номер чата. Он же — в логе прогона (шаг Poll): «Чаты бота: […]».
 4. Variables (необязательно): `ALERT_MIN_PCT` (5), `ALERT_MARKETS` (`1x2,total,spread`, ещё `dc`), `ALERT_SPORTS`

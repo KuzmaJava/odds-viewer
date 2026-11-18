@@ -23,9 +23,25 @@ public final class Telegram implements Alerts.Sender {
         this.chatId = chatId == null ? null : chatId.trim();
     }
 
+    /** Всем получателям из TELEGRAM_CHAT_ID (через запятую: личный чат и канал). Ошибка — если не дошло никому. */
     @Override
     public void send(String html) {
-        sendTo(chatId, html);
+        List<String> errors = new ArrayList<>();
+        int ok = 0;
+        for (String chat : chatId.split("[,;\\s]+")) {
+            if (chat.isBlank()) continue;
+            try {
+                sendTo(chat, html);
+                ok++;
+            } catch (RuntimeException e) {
+                errors.add(chat + ": " + e.getMessage());
+            }
+        }
+        if (!errors.isEmpty()) {
+            String msg = String.join("; ", errors);
+            if (ok == 0) throw new IllegalStateException(msg);
+            System.err.println("Telegram (часть получателей): " + msg);
+        }
     }
 
     public void sendTo(String chat, String html) {
