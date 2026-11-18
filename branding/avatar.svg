@@ -17,5 +17,5 @@
   <path d="M405 178 L492 172 L486 260 Z" fill="#22c55e" stroke="#22c55e" stroke-width="14" stroke-linejoin="round"/>
   <circle cx="250" cy="290" r="17" fill="#f8fafc"/>
   <circle cx="330" cy="360" r="17" fill="#f8fafc"/>
-  <text x="320" y="505" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-size="58" font-weight="700" fill="#f8fafc" letter-spacing="2">ODDS</text>
+  <text x="320" y="500" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-size="50" font-weight="700" fill="#f8fafc" letter-spacing="1">ODDS VIEWER</text>
 </svg>
