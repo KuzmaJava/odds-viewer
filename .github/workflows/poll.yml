@@ -50,6 +50,12 @@ jobs:
     env:
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       ODDS_API_KEYS: ${{ secrets.ODDS_API_KEYS }}  # необязательно: по строке на лигу «soccer_epl=ключ»
+      # Telegram-алерты (необязательно): без токена бот молчит
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      ALERT_MIN_PCT: ${{ vars.ALERT_MIN_PCT || '5' }}            # порог просадки / роста от открытия, %
+      ALERT_MARKETS: ${{ vars.ALERT_MARKETS || '1x2,total,spread' }}  # рынки (тоталы и форы — основная линия)
+      ALERT_SPORTS: ${{ vars.ALERT_SPORTS || '' }}               # только эти лиги; пусто — все
       TRACK_SPORTS: ${{ vars.TRACK_SPORTS || 'soccer_epl' }}
       POLL_BASE_HOURS: ${{ vars.POLL_BASE_HOURS || '3' }}
       POLL_NEAR_HOURS: ${{ vars.POLL_NEAR_HOURS || '2' }}

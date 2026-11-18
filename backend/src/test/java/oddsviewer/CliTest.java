@@ -28,6 +28,25 @@ class CliTest {
     @AfterEach
     void restore() {
         Cli.clientFactory = env -> KeyRouter.fromEnv(env, OddsClient::new);
+        Cli.senderFactory = env -> new Telegram(env.get("TELEGRAM_BOT_TOKEN"), env.get("TELEGRAM_CHAT_ID"));
+    }
+
+    @Test
+    void telegramAlertsOnlyWhenConfigured() throws Exception {
+        List<String> sent = new java.util.ArrayList<>();
+        Cli.senderFactory = e -> sent::add;
+        var env = env("soccer_epl");
+        api.league.add(raw("e1", now.plus(Duration.ofDays(1)), bmDefault()));
+        assertEquals(0, Cli.run(args("run"), env, now));
+        assertEquals(List.of(), sent);                                   // без токена бот молчит
+
+        env.put("TELEGRAM_BOT_TOKEN", "t");
+        env.put("TELEGRAM_CHAT_ID", "1");
+        assertEquals(0, Cli.run(args("run"), env, now.plus(Duration.ofMinutes(15))));
+        assertEquals(1, sent.size());
+        assertTrue(sent.get(0).startsWith("✅ Бот подключён"));
+        JsonNode state = Json.parse(Files.readString(tmp.resolve("state.json")));
+        assertTrue(state.get("settings").has("alerts_sent"));            // запомнено в state — повторно не придёт
     }
 
     Map<String, String> env(String sports) throws Exception {

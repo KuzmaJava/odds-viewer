@@ -36,6 +36,8 @@ public final class Export {
         st.set("last_result", lastResult == null ? Json.F.nullNode() : lastResult);
         List<String> errors = new ArrayList<>();
         if (lastResult != null) lastResult.path("errors").forEach(x -> errors.add(x.asText()));
+        String alertsError = p.store.getString("alerts_error");
+        if (alertsError != null && !alertsError.isBlank()) errors.add(alertsError);
         String lastError = p.lastError != null ? p.lastError : errors.isEmpty() ? null : String.join("; ", errors);
         st.put("last_error", lastError);
 

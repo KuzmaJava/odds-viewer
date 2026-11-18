@@ -122,6 +122,7 @@ public final class Cli {
                 }
             }
             changed = changed || result.path("changed").asBoolean();
+            if (alerts(store, env, now)) changed = true;
         }
 
         if (command.equals("normalize")) {
@@ -132,6 +133,39 @@ public final class Cli {
         if (changed) buildSite(poller, sports, outDir, Path.of(site), env, now);
         setOutput(env, "changed", changed ? "true" : "false");
         return 0;
+    }
+
+    /** Отправка алертов: по умолчанию Telegram (секреты TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID), в тестах — подмена. */
+    static java.util.function.Function<Map<String, String>, Alerts.Sender> senderFactory =
+            env -> new Telegram(env.get("TELEGRAM_BOT_TOKEN"), env.get("TELEGRAM_CHAT_ID"));
+
+    /** Алерты после прогона. true — изменилось состояние (запомнены отправленные), state нужно сохранить. */
+    static boolean alerts(Store store, Map<String, String> env, Instant now) {
+        String token = env.get("TELEGRAM_BOT_TOKEN"), chat = env.get("TELEGRAM_CHAT_ID");
+        if (token == null || token.isBlank()) return false; // бот не настроен — молчим
+        if (chat == null || chat.isBlank()) {
+            String msg = "Telegram: не задан TELEGRAM_CHAT_ID — напишите боту /start, номер чата появится в логе прогона";
+            System.err.println(msg);
+            try {
+                if (senderFactory.apply(env) instanceof Telegram t) {
+                    System.out.println("Чаты бота (TELEGRAM_CHAT_ID): " + t.recentChats());
+                }
+            } catch (RuntimeException e) {
+                System.err.println("Telegram: " + e.getMessage());
+            }
+            return setAlertsError(store, msg);
+        }
+        Alerts.Result r = Alerts.run(store, Alerts.Cfg.fromEnv(env), senderFactory.apply(env), now);
+        System.out.println("Алерты: сдвигов " + r.moves() + ", отправлено сообщений " + r.sent()
+                + (r.error() == null ? "" : ", ошибка: " + r.error()));
+        return setAlertsError(store, r.error()) || r.changed();
+    }
+
+    private static boolean setAlertsError(Store store, String error) {
+        String prev = store.getString("alerts_error");
+        if (java.util.Objects.equals(prev, error)) return false;
+        if (error == null) store.setSetting("alerts_error", null); else store.setString("alerts_error", error);
+        return true;
     }
 
     /** "a, b" -> [a, b] (отсортировано, без повторов); пусто -> null. Ключи лиг: только a-z, 0-9 и _. */
