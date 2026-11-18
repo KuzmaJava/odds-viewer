@@ -25,9 +25,25 @@ public final class Telegram implements Alerts.Sender {
 
     @Override
     public void send(String html) {
-        var body = Json.obj().put("chat_id", chatId).put("text", html).put("parse_mode", "HTML")
+        sendTo(chatId, html);
+    }
+
+    public void sendTo(String chat, String html) {
+        var body = Json.obj().put("chat_id", chat).put("text", html).put("parse_mode", "HTML")
                 .put("disable_web_page_preview", true);
         call("sendMessage", Json.compact(body));
+    }
+
+    /** id чатов, написавших боту (/start) или куда его добавили, — без повторов. */
+    public List<String> recentChatIds() {
+        List<String> res = new ArrayList<>();
+        for (JsonNode u : call("getUpdates", "{}").path("result")) {
+            for (String f : List.of("message", "channel_post", "my_chat_member")) {
+                JsonNode id = u.path(f).path("chat").path("id");
+                if (!id.isMissingNode() && !res.contains(id.asText())) res.add(id.asText());
+            }
+        }
+        return res;
     }
 
     /** Чаты, написавшие боту (/start) или куда его добавили, — чтобы узнать TELEGRAM_CHAT_ID. */

@@ -144,16 +144,35 @@ public final class Cli {
         String token = env.get("TELEGRAM_BOT_TOKEN"), chat = env.get("TELEGRAM_CHAT_ID");
         if (token == null || token.isBlank()) return false; // бот не настроен — молчим
         if (chat == null || chat.isBlank()) {
-            String msg = "Telegram: не задан TELEGRAM_CHAT_ID — напишите боту /start, номер чата появится в логе прогона";
+            String msg = "Telegram: не задан TELEGRAM_CHAT_ID — напишите боту /start, он пришлёт номер чата";
             System.err.println(msg);
+            boolean toldChanged = false;
             try {
                 if (senderFactory.apply(env) instanceof Telegram t) {
                     System.out.println("Чаты бота (TELEGRAM_CHAT_ID): " + t.recentChats());
+                    // Отвечаем каждому, кто написал боту: его номер чата — его и вставить в секрет.
+                    // Помним, кому уже ответили, чтобы не слать каждые 15 минут.
+                    JsonNode told = store.getSetting("telegram_told");
+                    ArrayNode toldNow = told instanceof ArrayNode a ? a.deepCopy() : Json.arr();
+                    for (String id : t.recentChatIds()) {
+                        boolean already = false;
+                        for (JsonNode x : toldNow) already |= x.asText().equals(id);
+                        if (already) continue;
+                        t.sendTo(id, "👋 Бот трекера Pinnacle на связи.\nВаш номер чата: <code>" + id + "</code>\n"
+                                + "Добавьте его в GitHub → Settings → Secrets and variables → Actions → Secrets "
+                                + "как <b>TELEGRAM_CHAT_ID</b> — и алерты начнут приходить сюда.");
+                        toldNow.add(id);
+                    }
+                    if (!toldNow.equals(told)) {
+                        store.setSetting("telegram_told", toldNow);
+                        toldChanged = true;
+                    }
                 }
             } catch (RuntimeException e) {
                 System.err.println("Telegram: " + e.getMessage());
+                msg = "Telegram: " + e.getMessage();
             }
-            return setAlertsError(store, msg);
+            return setAlertsError(store, msg) | toldChanged;
         }
         Alerts.Result r = Alerts.run(store, Alerts.Cfg.fromEnv(env), senderFactory.apply(env), now);
         System.out.println("Алерты: сдвигов " + r.moves() + ", отправлено сообщений " + r.sent()
