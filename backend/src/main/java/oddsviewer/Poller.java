@@ -310,6 +310,17 @@ public final class Poller {
                     if (lines == null || t.isBefore(lines)) { lines = t; linesEv = ev; linesWhat = what; }
                 }
             }
+            // Когда коэффициенты лиги обновлялись в последний раз: любой снимок и снимок всех линий
+            String lastAt = null, lastLines = null;
+            for (Store.Event ev : store.events(null)) {
+                if (!sport.equals(ev.sportKey)) continue;
+                String t = ev.lastTs();
+                if (t != null && (lastAt == null || t.compareTo(lastAt) > 0)) lastAt = t;
+                String l = firstNonNull(ev.linesAt, store.lastLinesTs(ev.id));
+                if (l != null && (lastLines == null || l.compareTo(lastLines) > 0)) lastLines = l;
+            }
+            row.put("last_at", lastAt);
+            row.put("last_lines_at", lastLines);
             row.put("matches", matches);
             row.put("h2h_at", h2h == null ? null : Times.iso(h2h));
             row.put("lines_at", lines == null ? null : Times.iso(lines));

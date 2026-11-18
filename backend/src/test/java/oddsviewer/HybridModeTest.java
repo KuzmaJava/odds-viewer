@@ -121,6 +121,8 @@ class HybridModeTest {
         assertEquals("за 24 ч", row.path("lines_point").asText());
         assertEquals("Kosovo — Israel", row.path("lines_match").asText());
         assertEquals(Times.iso(kickoff.minus(Duration.ofHours(1))), row.path("close_at").asText());
+        assertEquals(Times.iso(NOW), row.path("last_at").asText());           // последний снимок лиги
+        assertEquals(Times.iso(NOW), row.path("last_lines_at").asText());     // последний снимок всех линий
     }
 
     @Test

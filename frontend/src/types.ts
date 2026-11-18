@@ -75,6 +75,8 @@ export interface Status {
 export interface LeagueSchedule {
   sport: string;
   matches: number;              // предстоящих матчей без закрытия
+  last_at?: string | null;      // последний снимок коэффициентов лиги (любой)
+  last_lines_at?: string | null; // последний снимок всех тоталов и фор
   h2h_at: string | null;        // 1X2 запросом по лиге
   lines_at: string | null;      // все тоталы и форы по матчу
   lines_point: string | null;   // "открытие", "за 24 ч", …

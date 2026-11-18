@@ -11,7 +11,7 @@ export function MovesTab({ kind, source, version, league, onError }: {
   kind: "drops" | "rises"; source: DataSource; version: number; league: string; onError: (m: string) => void;
 }) {
   const rising = kind === "rises";
-  const [min, setMin] = useState(3);
+  const [min, setMin] = useState(5);
   const [started, setStarted] = useState(false);
   const [market, setMarket] = useState<Market | "">("");
   const [rows, setRows] = useState<MoveRow[] | null>(null);
