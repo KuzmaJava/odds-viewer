@@ -63,7 +63,7 @@ class AlertsTest {
         assertTrue(msg.contains("<b>K — I</b>"));
         assertTrue(msg.contains("EPL · 20.11 12:00"));                         // время по Киеву
         assertTrue(msg.contains("🔻 П1: <b>1.80</b> (открытие 2.00, −10.0%)"));
-        assertTrue(msg.contains("🔺 ТМ 2.5: <b>2.10</b> (открытие 1.90, +10.5%)"));
+        assertTrue(msg.contains("🟢 ТМ 2.5: <b>2.10</b> (открытие 1.90, +10.5%)"));
         assertFalse(msg.contains("3.5"));                                      // неосновная линия тотала — без алерта
         assertTrue(msg.endsWith("<a href=\"https://x.github.io/odds-viewer/\">Открыть трекер</a>"));
 

@@ -103,7 +103,7 @@ public final class Alerts {
                     .append(esc(ev.sportTitle == null ? ev.sportKey : ev.sportTitle)).append(" · ")
                     .append(DT.format(Times.parse(ev.commenceTime))).append('\n');
             for (Move m : ms) {
-                block.append(m.pct() < 0 ? "🔻 " : "🔺 ").append(esc(m.label())).append(": <b>").append(fmt(m.current()))
+                block.append(m.pct() < 0 ? "🔻 " : "🟢 ").append(esc(m.label())).append(": <b>").append(fmt(m.current()))
                         .append("</b> (открытие ").append(fmt(m.opening())).append(", ").append(pct(m.pct())).append(")\n");
             }
             block.append('\n');
