@@ -106,4 +106,18 @@ class AlertsTest {
         assertEquals(Set.of("1x2", "total", "spread"), c.markets());
         assertEquals("https://kuzmajava.github.io/odds-viewer/", c.siteUrl());
     }
+
+    @Test
+    void raisedThresholdIgnoresMovesSentBelowIt() {
+        Store s = opened();
+        Alerts.run(s, cfg, sender, NOW);
+        snap(s, "2026-11-18T09:00:00Z", "home", 1.88, null, "draw", 3.4, null, "away", 3.8, null);
+        Alerts.run(s, cfg, sender, NOW);                                       // П1 −6% при пороге 5% — отправлено
+        sent.clear();
+        Alerts.Cfg ten = new Alerts.Cfg(10, cfg.markets(), Set.of(), cfg.siteUrl());
+        snap(s, "2026-11-18T12:00:00Z", "home", 1.80, null, "draw", 3.4, null, "away", 3.8, null);
+        Alerts.run(s, ten, sender, NOW.plus(Duration.ofHours(2)));            // −10% — приходит, хотя от −6% лишь 4%
+        assertEquals(1, sent.size());
+        assertTrue(sent.get(0).contains("П1: <b>1.80</b>"));
+    }
 }

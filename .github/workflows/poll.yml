@@ -53,7 +53,7 @@ jobs:
       # Telegram-алерты (необязательно): без токена бот молчит
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      ALERT_MIN_PCT: ${{ vars.ALERT_MIN_PCT || '5' }}            # порог просадки / роста от открытия, %
+      ALERT_MIN_PCT: ${{ vars.ALERT_MIN_PCT || '10' }}            # порог просадки / роста от открытия, %
       ALERT_MARKETS: ${{ vars.ALERT_MARKETS || '1x2,total,spread' }}  # рынки (тоталы и форы — основная линия)
       ALERT_SPORTS: ${{ vars.ALERT_SPORTS || '' }}               # только эти лиги; пусто — все
       TRACK_SPORTS: ${{ vars.TRACK_SPORTS || 'soccer_epl' }}

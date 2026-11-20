@@ -72,7 +72,8 @@ public final class Alerts {
                 if (Math.abs(pct) < cfg.minPct()) continue;
                 String key = ev.id + "|" + o.path("code").asText();
                 JsonNode prev = sentNode == null ? null : sentNode.get(key);
-                if (prev != null) {
+                // Отправленное ниже текущего порога (порог подняли) не считаем — исход придёт как новый
+                if (prev != null && Math.abs(prev.asDouble()) >= cfg.minPct()) {
                     double p = prev.asDouble();
                     boolean flipped = Math.signum(p) != Math.signum(pct);
                     if (!flipped && Math.abs(pct) - Math.abs(p) < cfg.minPct()) continue;
