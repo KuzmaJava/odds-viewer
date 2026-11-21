@@ -98,3 +98,17 @@ export interface SiteData {
   history: Record<string, HistorySnap[]>;
   sports: Sport[];
 }
+
+// Архив прошедших матчей (archive/index.json и archive/ГГГГ-ММ.json, Java-трекер)
+export interface ArchiveEntry {
+  id: string;
+  sport_key: string;
+  sport_title: string;
+  home: string;
+  away: string;
+  commence_time: string;
+  month: string;                                       // "2026-11"
+  x?: Record<string, [number | null, number | null]>;  // 1X2: код -> [открытие, закрытие]
+}
+export interface ArchiveIndex { generated_at: string; months: { month: string; count: number }[]; events: ArchiveEntry[] }
+export interface ArchiveMonth { events: EventMove[]; history: Record<string, HistorySnap[]> }

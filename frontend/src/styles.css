@@ -132,3 +132,14 @@ details.schedule td { white-space: nowrap; }
 }
 .linesNow { display: block; margin-top: 4px; }
 @media (max-width: 700px) { table.sched td.league .linesNow { display: block; margin: 4px 0 2px; font-weight: 400; } }
+
+/* Архив */
+.toolbar input.search { min-width: 240px; padding: 6px 8px; font: inherit; }
+table.archive td.left { white-space: normal; }
+@media (max-width: 700px) {
+  .toolbar input.search { min-width: 0; width: 100%; }
+  table.archive td, table.archive th { padding-left: 6px; padding-right: 6px; }
+  table.archive td.left { min-width: 110px; max-width: 125px; }
+  table.archive td.num .muted { white-space: normal; font-size: 11px; }
+  table.archive td.num { min-width: 0; }
+}

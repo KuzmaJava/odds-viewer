@@ -31,7 +31,7 @@ on:
         default: ""
   push:
     branches: [main, master]
-    paths: ["static/**", "app/**", "frontend/**", "backend/**", ".github/workflows/poll.yml", "data/state.json"]  # пуши бота сюда не попадают (GITHUB_TOKEN не запускает workflow)
+    paths: ["static/**", "app/**", "frontend/**", "backend/**", ".github/workflows/poll.yml", "data/state.json", "data/archive/**"]  # пуши бота сюда не попадают (GITHUB_TOKEN не запускает workflow)
 
 permissions:
   contents: write
@@ -127,6 +127,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/state.json
+          if [ -d data/archive ]; then git add data/archive; fi
           git diff --cached --quiet && exit 0
           git commit -m "poll $(date -u +%Y-%m-%dT%H:%MZ)"
           git pull --rebase --autostash

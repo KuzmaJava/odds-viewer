@@ -229,4 +229,22 @@ public final class Store {
     }
 
     List<Event> allEvents() { return new ArrayList<>(events.values()); }
+
+    /** Копия матча из другого хранилища (архив): заменяет имеющийся целиком. */
+    void put(Event src) {
+        Event e = new Event(src.id);
+        e.sportKey = src.sportKey;
+        e.sportTitle = src.sportTitle;
+        e.home = src.home;
+        e.away = src.away;
+        e.commenceTime = src.commenceTime;
+        e.openedAt = src.openedAt;
+        e.closedAt = src.closedAt;
+        e.linesAt = src.linesAt;
+        e.h2hAt = src.h2hAt;
+        src.snaps.forEach((ts, p) -> e.snaps.put(ts, new LinkedHashMap<>(p)));
+        events.put(e.id, e);
+    }
+
+    boolean remove(String id) { return events.remove(id) != null; }
 }

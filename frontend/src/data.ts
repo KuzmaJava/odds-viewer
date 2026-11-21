@@ -1,5 +1,5 @@
 import { moveRows } from "./moves";
-import type { EventMove, HistorySnap, MoveRow, SiteData, Sport, Status } from "./types";
+import type { ArchiveIndex, ArchiveMonth, EventMove, HistorySnap, MoveRow, SiteData, Sport, Status } from "./types";
 
 // Источник данных:
 //  - статический режим (GitHub Pages): рядом со страницей лежит data.json, собранный GitHub Actions;
@@ -15,6 +15,43 @@ export interface DataSource {
   sports(): Promise<Sport[]>;
   setTracked(sports: string[]): Promise<void>;
   pollNow(): Promise<void>;
+  archiveIndex(): Promise<ArchiveIndex | null>;   // null — архива нет (серверный режим или ещё пуст)
+  archiveMonth(month: string): Promise<ArchiveMonth>;
+}
+
+// Архив: индекс и файлы месяцев грузятся по требованию и кэшируются до перезагрузки страницы (меняются раз в несколько часов)
+function archiveLoader() {
+  let index: Promise<ArchiveIndex | null> | null = null;
+  const months = new Map<string, Promise<ArchiveMonth>>();
+  const get = async <T,>(path: string): Promise<T | null> => {
+    const r = await fetch(path, { cache: "no-cache" });
+    if (!r.ok || !(r.headers.get("content-type") || "").includes("json")) return null;
+    return (await r.json()) as T;
+  };
+  const self = {
+    index(): Promise<ArchiveIndex | null> {
+      if (!index) index = get<ArchiveIndex>("archive/index.json").catch(() => null);
+      return index;
+    },
+    month(m: string): Promise<ArchiveMonth> {
+      if (!/^\d{4}-\d{2}$/.test(m)) return Promise.reject(new Error("некорректный месяц " + m));
+      let p = months.get(m);
+      if (!p) {
+        p = get<ArchiveMonth>(`archive/${m}.json`).then((x) => {
+          if (!x) throw new Error(`архив за ${m} не найден`);
+          return x;
+        });
+        p.catch(() => months.delete(m));
+        months.set(m, p);
+      }
+      return p;
+    },
+    async history(id: string): Promise<HistorySnap[] | null> {
+      const e = (await self.index())?.events.find((x) => x.id === id);
+      return e ? (await self.month(e.month)).history[id] ?? null : null;
+    },
+  };
+  return self;
 }
 
 async function fetchSite(): Promise<SiteData | null> {
@@ -42,6 +79,7 @@ const upcoming = (events: EventMove[], includeStarted: boolean) => {
 export async function createDataSource(): Promise<DataSource> {
   const site = await fetchSite();
   if (site) {
+    const arch = archiveLoader();
     const src: DataSource = {
       isStatic: true,
       site,
@@ -49,10 +87,12 @@ export async function createDataSource(): Promise<DataSource> {
       async status() { return src.site!.status; },
       async events(inc) { return upcoming(src.site!.events, inc); },
       async moves(kind, min, inc) { return moveRows(upcoming(src.site!.events, inc), min, kind === "rises"); },
-      async history(id) { return src.site!.history[id] ?? []; },
+      async history(id) { return src.site!.history[id] ?? (await arch.history(id)) ?? []; },
       async sports() { return src.site!.sports ?? []; },
       async setTracked() { throw new Error("в статической версии лиги сохраняются через GitHub"); },
       async pollNow() { throw new Error("в статической версии опрос запускается через GitHub"); },
+      archiveIndex: () => arch.index(),
+      archiveMonth: (m) => arch.month(m),
     };
     return src;
   }
@@ -69,5 +109,7 @@ export async function createDataSource(): Promise<DataSource> {
       await apiGet("/api/tracked", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sports }) });
     },
     async pollNow() { await apiGet("/api/poll", { method: "POST" }); },
+    async archiveIndex() { return null; },
+    async archiveMonth() { throw new Error("архив есть только в версии на GitHub Pages"); },
   };
 }

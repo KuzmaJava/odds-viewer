@@ -123,14 +123,20 @@ public final class Cli {
             }
             changed = changed || result.path("changed").asBoolean();
             if (alerts(store, env, now)) changed = true;
+            if (Archive.sync(store, archiveDir(statePath), now)) {
+                System.out.println("Архив: матчи перенесены в " + archiveDir(statePath));
+                changed = true;
+            }
         }
 
         if (command.equals("normalize")) {
             writeState(store, statePath, now);
+            Archive.sync(store, archiveDir(statePath), now);
             return 0;
         }
         if (changed && command.equals("run")) writeState(store, statePath, now);
         if (changed) buildSite(poller, sports, outDir, Path.of(site), env, now);
+        if (changed) Archive.exportSite(archiveDir(statePath), outDir, now);
         setOutput(env, "changed", changed ? "true" : "false");
         return 0;
     }
@@ -251,7 +257,13 @@ public final class Cli {
         }
     }
 
-    private static void write(Path p, String s) {
+    /** Архив прошедших матчей — рядом со state: data/archive/. */
+    static Path archiveDir(Path statePath) {
+        Path parent = statePath.toAbsolutePath().getParent();
+        return parent.resolve("archive");
+    }
+
+    static void write(Path p, String s) {
         try {
             if (p.getParent() != null) Files.createDirectories(p.getParent());
             Files.writeString(p, s, StandardCharsets.UTF_8);

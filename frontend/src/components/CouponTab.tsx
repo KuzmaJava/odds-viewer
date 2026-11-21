@@ -19,9 +19,26 @@ export function CouponTab({ source, version, onError }: { source: DataSource; ve
   const [events, setEvents] = useState<EventMove[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
+  // Матчи, которых уже нет в data.json (старше 14 дней), берём из архива
+  const missingKey = picks.map((p) => p.event_id).sort().join(",");
   useEffect(() => {
-    source.events(true).then(setEvents, (e: Error) => onError(e.message));
-  }, [source, version, onError]);
+    let alive = true;
+    (async () => {
+      const evs = await source.events(true);
+      const have = new Set(evs.map((e) => e.id));
+      const missing = new Set(missingKey.split(",").filter((id) => id && !have.has(id)));
+      if (missing.size) {
+        const idx = await source.archiveIndex().catch(() => null);
+        const months = new Set(idx?.events.filter((e) => missing.has(e.id)).map((e) => e.month));
+        for (const m of months) {
+          const arch = await source.archiveMonth(m).catch(() => null);
+          arch?.events.forEach((e) => { if (missing.has(e.id)) evs.push(e); });
+        }
+      }
+      if (alive) setEvents(evs);
+    })().catch((e: Error) => onError(e.message));
+    return () => { alive = false; };
+  }, [source, version, onError, missingKey]);
 
   const rows = couponRows([...picks].sort((a, b) => a.commence_time.localeCompare(b.commence_time)), events ?? []);
   const tot = expressTotals(rows);

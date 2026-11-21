@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { ArchiveTab } from "./components/ArchiveTab";
 import { CouponTab } from "./components/CouponTab";
 import { LeagueFilter } from "./components/LeagueFilter";
 import { LeaguesTab } from "./components/LeaguesTab";
@@ -10,8 +11,8 @@ import { fmtDT } from "./format";
 import { dispatchWorkflow, getToken } from "./github";
 import type { Status } from "./types";
 
-type Tab = "moves" | "drops" | "rises" | "coupon" | "leagues";
-const TABS: [Tab, string][] = [["moves", "Матчи"], ["drops", "Просадки"], ["rises", "Повышения"], ["coupon", "Купон"], ["leagues", "Лиги"]];
+type Tab = "moves" | "drops" | "rises" | "coupon" | "archive" | "leagues";
+const TABS: [Tab, string][] = [["moves", "Матчи"], ["drops", "Просадки"], ["rises", "Повышения"], ["coupon", "Купон"], ["archive", "Архив"], ["leagues", "Лиги"]];
 const REFRESH_MS = 60_000; // перечитываем data.json / API раз в минуту — квоту это не тратит
 
 function savedTab(): Tab {
@@ -147,11 +148,12 @@ export function App({ source }: { source: DataSource }) {
       </header>
       {banners.length > 0 && <div className="banner">{banners.map((b, i) => <div key={i}>{b}</div>)}</div>}
       <main>
-        {tab !== "leagues" && tab !== "coupon" && <LeagueFilter leagues={leagues} value={leagueFilter} onChange={setLeague} />}
+        {tab !== "leagues" && tab !== "coupon" && tab !== "archive" && <LeagueFilter leagues={leagues} value={leagueFilter} onChange={setLeague} />}
         {tab === "moves" && <MatchesTab source={source} version={version} policy={status?.policy ?? {}} status={status} league={leagueFilter} onError={onError} />}
         {tab === "drops" && <MovesTab kind="drops" source={source} version={version} league={leagueFilter} onError={onError} />}
         {tab === "rises" && <MovesTab kind="rises" source={source} version={version} league={leagueFilter} onError={onError} />}
         {tab === "coupon" && <CouponTab source={source} version={version} onError={onError} />}
+        {tab === "archive" && <ArchiveTab source={source} version={version} onError={onError} />}
         {tab === "leagues" && status && (
           <LeaguesTab source={source} tracked={status.tracked_sports} policy={status.policy} onSaved={refresh} />
         )}
